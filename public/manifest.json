@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Watch Later Mate",
+  "version": "1.0.0",
+  "description": "Helps you catch up with videos from any playlist of your choosing",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "scripting",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*"
+  ]
+}

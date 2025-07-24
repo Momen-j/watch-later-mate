@@ -1,0 +1,91 @@
+/* Main container for the entire shelf */
+.custom-playlist-shelf {
+  padding: 24px 24px; /* FIXED: Added horizontal padding to match YouTube's layout */
+  /*border-bottom: 1px solid var(--yt-spec-10-percent-layer);*/
+  margin: 0;
+  width: 100%; /* Ensure container doesn't exceed viewport */
+  max-width: 100%; /* Prevent overflow */
+  box-sizing: border-box; /* Include padding in width calculation */
+}
+
+/* Shelf title style */
+.shelf-title {
+  color: var(--yt-spec-text-primary);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+/* CHANGE: Use Flexbox for a horizontal, scrollable layout */
+.playlist-video-grid {
+  display: flex; /* Use flexbox for a single row */
+  overflow-x: auto; /* Enable horizontal scrolling */
+  overflow-y: hidden; /* Prevent vertical scrolling */
+  gap: 16px;
+  padding-bottom: 8px; /* Add space for the scrollbar */
+  width: 100%; /* Ensure it doesn't exceed parent width */
+  max-width: 100%; /* Prevent overflow beyond container */
+}
+
+/* CHANGE: Set a fixed, smaller width for each video item */
+.playlist-video-item {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 210px; /* Set a fixed width of 210px for each item */
+}
+
+/* Thumbnail styling */
+.playlist-video-item .thumbnail-link {
+  position: relative;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.playlist-video-item .thumbnail-link img {
+  width: 100%;
+  border-radius: 12px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+/* Duration overlay on the thumbnail */
+.video-duration-overlay {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Video details section below the thumbnail */
+.video-details {
+  display: flex;
+  flex-direction: column;
+}
+
+/* CHANGE: Reduce font size for smaller item layout */
+.video-title {
+  font-size: 14px; /* Reduced from 16px */
+  font-weight: 500;
+  margin: 0;
+  line-height: 1.4;
+  max-height: 3.9rem; /* Adjusted for smaller font size */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-title a {
+  color: var(--yt-spec-text-primary);
+  text-decoration: none;
+}
+
+/* CHANGE: Reduce font size for smaller item layout */
+.video-meta {
+  font-size: 12px; /* Reduced from 14px */
+  color: var(--yt-spec-text-secondary);
+}
+
