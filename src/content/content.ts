@@ -223,7 +223,7 @@ function injectPlaylist(): void {
 
   const shelfHeader = document.createElement("h2");
   shelfHeader.className = "shelf-title";
-  shelfHeader.textContent = "Catch up on Watch Later";
+  shelfHeader.textContent = "Watch Later";
   playlistContainer.appendChild(shelfHeader);
 
   const videoGrid = document.createElement("div");

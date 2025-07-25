@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Watch Later Mate",
+  "name": "Playlist Pal",
   "version": "1.0.0",
   "description": "Helps you catch up with videos from any playlist of your choosing",
   "action": {
@@ -9,11 +9,13 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": [
-    "scripting",
-    "webNavigation"
-  ],
+  "permissions": ["scripting", "webNavigation", "identity"],
   "host_permissions": [
-    "*://*.youtube.com/*"
-  ]
+    "*://*.youtube.com/*",
+    "https://*.googleapis.com/"
+    ],
+  "oauth2": {
+    "client_id": "",
+    "scopes": ["https://www.googleapis.com/auth/youtube.readonly"]
+  }
 }
