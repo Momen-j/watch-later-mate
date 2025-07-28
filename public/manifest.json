@@ -9,7 +9,7 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["scripting", "webNavigation", "identity"],
+  "permissions": ["scripting", "webNavigation", "identity", "tabs", "storage"],
   "host_permissions": [
     "*://*.youtube.com/*",
     "https://*.googleapis.com/"
