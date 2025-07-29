@@ -163,29 +163,29 @@ function App() {
         return;
       }
 
-      let watchLaterCount = 0;
-      try {
-        const watchLaterResponse = await fetch(
-          "https://www.googleapis.com/youtube/v3/playlistItems?part=id&playlistId=WL&maxResults=1",
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        const watchLaterData = await watchLaterResponse.json();
-        watchLaterCount = watchLaterData.pageInfo?.totalResults || 0;
-      } catch (error) {
-        console.warn("Could not fetch Watch Later count:", error);
-      }
+      let likedVideosCount = 0;
+try {
+  const likedVideosResponse = await fetch(
+    "https://www.googleapis.com/youtube/v3/playlistItems?part=id&playlistId=LL&maxResults=1",
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  const likedVideosData = await likedVideosResponse.json();
+  likedVideosCount = likedVideosData.pageInfo?.totalResults || 0;
+} catch (error) {
+  console.warn("Could not fetch Liked Videos count:", error);
+}
 
-      // Create Watch Later playlist entry with real count
-      const watchLaterPlaylist: PlaylistInfo = {
-        id: "WL",
-        title: "Watch Later",
-        description: "Your saved videos",
-        thumbnailUrl: "",
-        videoCount: watchLaterCount, // Real count!
-        privacy: "private",
-      };
+      // Create Liked Videos playlist entry with real count
+const likedVideosPlaylist: PlaylistInfo = {
+  id: "LL",
+  title: "Liked Videos",
+  description: "Videos you've liked",
+  thumbnailUrl: "",
+  videoCount: likedVideosCount,
+  privacy: "private",
+};
 
       if (playlistsData.items && playlistsData.items.length > 0) {
         const formattedPlaylists: PlaylistInfo[] = playlistsData.items.map(
@@ -204,10 +204,10 @@ function App() {
         );
 
         // Add Watch Later as the first option
-        setPlaylists([watchLaterPlaylist, ...formattedPlaylists]);
+        setPlaylists([likedVideosPlaylist, ...formattedPlaylists]);
       } else {
         // Even if no regular playlists, still show Watch Later
-        setPlaylists([watchLaterPlaylist]);
+        setPlaylists([likedVideosPlaylist]);
       }
     } catch (error) {
       console.error("Failed to fetch playlists:", error);

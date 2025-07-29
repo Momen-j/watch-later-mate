@@ -424,8 +424,10 @@ async function fetchMultiplePlaylistsData(): Promise<
     // Initialize API service
     const apiService = new YoutubeApiService(authToken);
 
-    // Get user's playlists info (only if we need non-WL playlists)
-    const regularPlaylistIds = selectedPlaylistIds.filter((id) => id !== "WL");
+    // Get user's playlists info (only if we need non-LIKED_VIDEOS playlists)
+    const regularPlaylistIds = selectedPlaylistIds.filter(
+      (id) => id !== "LL"
+    );
     const allPlaylists =
       regularPlaylistIds.length > 0
         ? await apiService.getUserPlaylists(25)
@@ -434,13 +436,13 @@ async function fetchMultiplePlaylistsData(): Promise<
     // Create minimal playlist info for the playlists we need to fetch
     const selectedPlaylists = selectedPlaylistIds
       .map((playlistId) => {
-        if (playlistId === "WL") {
+        if (playlistId === "LL") {
           return {
-            id: "WL",
-            title: "Watch Later",
+            id: "LIKED_VIDEOS",
+            title: "Liked Videos",
             description: "Your saved videos",
             thumbnailUrl: "",
-            videoCount: 0, // This doesn't matter since we're just using it for fetching
+            videoCount: 0,
             privacy: "private" as const,
           };
         } else {
@@ -459,13 +461,25 @@ async function fetchMultiplePlaylistsData(): Promise<
 
     for (const playlist of selectedPlaylists) {
       console.log(`Fetching videos from playlist: "${playlist.title}"`);
+      console.log(`Playlist ID: ${playlist.id}`);
+      console.log(`Is Liked Video? ${playlist.id === "LIKED_VIDEOS"}`);
 
       try {
-        // Special handling for Watch Later playlist
-        const videos =
-          playlist.id === "WL"
-            ? await apiService.getWatchLaterPlaylist(50)
-            : await apiService.getCompletePlaylistData(playlist.id, 50);
+        let videos: Video[];
+
+        if (playlist.id === "LIKED_VIDEOS") {
+          console.log("🔍 Calling getLikedVideosPlaylist...");
+          videos = await apiService.getLikedVideosPlaylist(50);
+          console.log(
+            `🔍 getLikedVideosPlaylist returned: ${videos.length} videos`
+          );
+        } else {
+          console.log("🔍 Calling getCompletePlaylistData...");
+          videos = await apiService.getCompletePlaylistData(playlist.id, 50);
+          console.log(
+            `🔍 getCompletePlaylistData returned: ${videos.length} videos`
+          );
+        }
 
         if (videos.length > 0) {
           playlistsWithVideos.push({

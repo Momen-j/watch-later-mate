@@ -410,12 +410,14 @@ class YoutubeApiService {
    * Get the "Watch Later" playlist
    * Has a special playlist ID that's the same across all users
    */
-  async getWatchLaterPlaylist(maxResults: number = 50): Promise<Video[]> {
+  async getLikedVideosPlaylist(maxResults: number = 50): Promise<Video[]> {
+    console.log("Fetching Liked Videos playlist...");
+
     try {
-      return await this.getCompletePlaylistData("WL", maxResults);
+      return await this.getCompletePlaylistData("LL", maxResults);
     } catch (error) {
-      console.error("Failed to fetch Watch Later playlist", error);
-      throw error;
+      console.error("Liked Videos fetch failed:", error);
+      return [];
     }
   }
 }
