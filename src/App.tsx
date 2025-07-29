@@ -6,7 +6,12 @@ interface PlaylistInfo {
   description: string;
   thumbnailUrl: string;
   videoCount: number;
-  privacy: 'public' | 'private' | 'unlisted';
+  privacy: "public" | "private" | "unlisted";
+}
+
+interface SelectedPlaylistSettings {
+  playlistIds: string[];
+  maxPlaylists: number;
 }
 
 function App() {
@@ -14,45 +19,58 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [playlists, setPlaylists] = useState<PlaylistInfo[]>([]);
   const [isLoadingPlaylists, setIsLoadingPlaylists] = useState(false);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>('');
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>([]);
+  const [savedSettings, setSavedSettings] =
+    useState<SelectedPlaylistSettings | null>(null);
 
-  // Check for existing auth token on popup load
+  // Check for existing auth token and settings on popup load
   useEffect(() => {
-    const getTokenWithTimeout = () => {
-      const timeout = setTimeout(() => {
-        console.warn('Timeout getting auth token');
-        setAuthToken(null);
-        setIsLoading(false);
-      }, 5000);
+    const loadInitialData = async () => {
+      try {
+        // Get auth token
+        chrome.runtime.sendMessage(
+          { type: "GET_AUTH_TOKEN" },
+          async (response) => {
+            if (chrome.runtime.lastError) {
+              console.error(
+                "Error getting auth token:",
+                chrome.runtime.lastError.message
+              );
+              setAuthToken(null);
+            } else if (response && response.token) {
+              console.log("Found existing auth token");
+              setAuthToken(response.token);
+              // Auto-load playlists if we have a token
+              await loadUserPlaylists(response.token);
+            } else {
+              console.log("No existing auth token found");
+              setAuthToken(null);
+            }
+            setIsLoading(false);
+          }
+        );
 
-      chrome.runtime.sendMessage({ type: 'GET_AUTH_TOKEN' }, (response) => {
-        clearTimeout(timeout);
-        
-        if (chrome.runtime.lastError) {
-          console.error('Error getting auth token:', chrome.runtime.lastError.message);
-          setAuthToken(null);
-        } else if (response && response.token) {
-          console.log('Found existing auth token');
-          setAuthToken(response.token);
-          // Auto-load playlists if we have a token
-          loadUserPlaylists(response.token);
-        } else {
-          console.log('No existing auth token found');
-          setAuthToken(null);
-        }
+        // Get saved playlist selection
+        chrome.storage.local.get(["selectedPlaylists"], (result) => {
+          if (result.selectedPlaylists) {
+            setSavedSettings(result.selectedPlaylists);
+            setSelectedPlaylistIds(result.selectedPlaylists.playlistIds || []);
+          }
+        });
+      } catch (error) {
+        console.error("Error loading initial data:", error);
         setIsLoading(false);
-      });
+      }
     };
 
-    getTokenWithTimeout();
+    loadInitialData();
   }, []);
 
   // Function to handle the sign-in process
   const handleSignIn = () => {
     setIsLoading(true);
-    
+
     chrome.identity.getAuthToken({ interactive: true }, (authResult) => {
-      // Always check for a runtime error first.
       if (chrome.runtime.lastError) {
         console.error(
           "Authentication failed:",
@@ -64,39 +82,35 @@ function App() {
       }
 
       let token: string | undefined;
-
-      // The API can return a string OR an object. This code handles both.
       if (typeof authResult === "string") {
         token = authResult;
       } else if (authResult && typeof authResult.token === "string") {
         token = authResult.token;
       }
 
-      // Finally, check if we successfully extracted a token.
       if (token) {
         console.log("Authentication successful!");
-        
-        // Store token in chrome.storage.local via background script
+
         chrome.runtime.sendMessage(
-          { type: 'STORE_AUTH_TOKEN', token: token },
+          { type: "STORE_AUTH_TOKEN", token: token },
           (response) => {
             if (chrome.runtime.lastError) {
-              console.error('Failed to store auth token:', chrome.runtime.lastError.message);
+              console.error(
+                "Failed to store auth token:",
+                chrome.runtime.lastError.message
+              );
               setAuthToken(null);
             } else if (response && response.success) {
               setAuthToken(token);
-              // Load playlists after successful token storage
               loadUserPlaylists(token);
             } else {
-              console.error('Failed to store auth token:', response?.error);
+              console.error("Failed to store auth token:", response?.error);
               setAuthToken(null);
             }
             setIsLoading(false);
           }
         );
       } else {
-        // This message now accurately reflects that no token was granted.
-        // This is most likely because the user cancelled the sign-in process.
         console.error(
           "Authentication failed: No token was granted by the user."
         );
@@ -108,42 +122,32 @@ function App() {
 
   // Function to sign out
   const handleSignOut = () => {
-    const timeout = setTimeout(() => {
-      console.warn('Timeout clearing auth token');
-      // Still clear local state even if background script fails
-      setAuthToken(null);
-      setPlaylists([]);
-      setSelectedPlaylistId('');
-    }, 5000);
-
-    chrome.runtime.sendMessage({ type: 'CLEAR_AUTH_TOKEN' }, (response) => {
-      clearTimeout(timeout);
-      
+    chrome.runtime.sendMessage({ type: "CLEAR_AUTH_TOKEN" }, () => {
       if (chrome.runtime.lastError) {
-        console.error('Error clearing auth token:', chrome.runtime.lastError.message);
+        console.error(
+          "Error clearing auth token:",
+          chrome.runtime.lastError.message
+        );
       }
-      
-      if (response && response.success) {
-        console.log('Successfully signed out');
-      } else {
-        console.warn('Sign out may have failed:', response?.error);
-      }
-      
+
       // Always clear local state regardless
       setAuthToken(null);
       setPlaylists([]);
-      setSelectedPlaylistId('');
+      setSelectedPlaylistIds([]);
+      setSavedSettings(null);
+
+      // Clear saved playlist settings
+      chrome.storage.local.remove(["selectedPlaylists"]);
     });
   };
 
   // Function to load user's playlists
   const loadUserPlaylists = async (token: string) => {
     setIsLoadingPlaylists(true);
-    
+
     try {
-      // Fetch user's playlists
       const playlistsResponse = await fetch(
-        'https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails,status&mine=true&maxResults=25',
+        "https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails,status&mine=true&maxResults=25",
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -151,31 +155,59 @@ function App() {
       const playlistsData = await playlistsResponse.json();
 
       if (playlistsData.error) {
-        console.error("API Error fetching playlists:", playlistsData.error.message);
+        console.error(
+          "API Error fetching playlists:",
+          playlistsData.error.message
+        );
         setPlaylists([]);
         return;
       }
 
-      if (playlistsData.items && playlistsData.items.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const formattedPlaylists: PlaylistInfo[] = playlistsData.items.map((item: any) => ({
-          id: item.id,
-          title: item.snippet.title,
-          description: item.snippet.description || '',
-          thumbnailUrl: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.default?.url || '',
-          videoCount: item.contentDetails?.itemCount || 0,
-          privacy: item.status?.privacyStatus || 'private',
-        }));
+      let watchLaterCount = 0;
+      try {
+        const watchLaterResponse = await fetch(
+          "https://www.googleapis.com/youtube/v3/playlistItems?part=id&playlistId=WL&maxResults=1",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const watchLaterData = await watchLaterResponse.json();
+        watchLaterCount = watchLaterData.pageInfo?.totalResults || 0;
+      } catch (error) {
+        console.warn("Could not fetch Watch Later count:", error);
+      }
 
-        setPlaylists(formattedPlaylists);
-        
-        // Auto-select the first playlist
-        if (formattedPlaylists.length > 0) {
-          setSelectedPlaylistId(formattedPlaylists[0].id);
-        }
+      // Create Watch Later playlist entry with real count
+      const watchLaterPlaylist: PlaylistInfo = {
+        id: "WL",
+        title: "Watch Later",
+        description: "Your saved videos",
+        thumbnailUrl: "",
+        videoCount: watchLaterCount, // Real count!
+        privacy: "private",
+      };
+
+      if (playlistsData.items && playlistsData.items.length > 0) {
+        const formattedPlaylists: PlaylistInfo[] = playlistsData.items.map(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (item: any) => ({
+            id: item.id,
+            title: item.snippet.title,
+            description: item.snippet.description || "",
+            thumbnailUrl:
+              item.snippet.thumbnails?.high?.url ||
+              item.snippet.thumbnails?.default?.url ||
+              "",
+            videoCount: item.contentDetails?.itemCount || 0,
+            privacy: item.status?.privacyStatus || "private",
+          })
+        );
+
+        // Add Watch Later as the first option
+        setPlaylists([watchLaterPlaylist, ...formattedPlaylists]);
       } else {
-        console.log("No playlists found for this user.");
-        setPlaylists([]);
+        // Even if no regular playlists, still show Watch Later
+        setPlaylists([watchLaterPlaylist]);
       }
     } catch (error) {
       console.error("Failed to fetch playlists:", error);
@@ -185,37 +217,51 @@ function App() {
     }
   };
 
-  // Function to refresh playlists
-  const refreshPlaylists = () => {
-    if (authToken) {
-      loadUserPlaylists(authToken);
-    }
+  // Handle playlist selection
+  const handlePlaylistToggle = (playlistId: string) => {
+    setSelectedPlaylistIds((prev) => {
+      if (prev.includes(playlistId)) {
+        return prev.filter((id) => id !== playlistId);
+      } else {
+        // Limit to 3 playlists for free tier (can be made configurable)
+        if (prev.length >= 3) {
+          alert(
+            "Maximum 3 playlists allowed. Upgrade for unlimited playlists!"
+          );
+          return prev;
+        }
+        return [...prev, playlistId];
+      }
+    });
   };
 
-  // Function to test current playlist (for debugging)
-  const testCurrentPlaylist = async () => {
-    if (!authToken || !selectedPlaylistId) {
-      console.error("No auth token or playlist selected.");
-      return;
-    }
+  // Save playlist selection
+  const savePlaylistSelection = () => {
+    const settings: SelectedPlaylistSettings = {
+      playlistIds: selectedPlaylistIds,
+      maxPlaylists: 3, // Can be made configurable based on user tier
+    };
 
-    try {
-      const selectedPlaylist = playlists.find(p => p.id === selectedPlaylistId);
-      console.log(`Testing playlist: "${selectedPlaylist?.title}" (${selectedPlaylistId})`);
-      
-      // Fetch first few videos from selected playlist
-      const videosResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${selectedPlaylistId}&maxResults=5`,
-        {
-          headers: { Authorization: `Bearer ${authToken}` },
-        }
-      );
-      const videosData = await videosResponse.json();
+    chrome.storage.local.set({ selectedPlaylists: settings }, () => {
+      if (chrome.runtime.lastError) {
+        console.error(
+          "Failed to save playlist selection:",
+          chrome.runtime.lastError
+        );
+        alert("Failed to save settings. Please try again.");
+      } else {
+        setSavedSettings(settings);
+        alert("Playlist selection saved! Refresh YouTube to see changes.");
+      }
+    });
+  };
 
-      console.log(`Videos from "${selectedPlaylist?.title}":`, videosData);
-    } catch (error) {
-      console.error("Failed to test playlist:", error);
-    }
+  // Clear all selections
+  const clearAllSelections = () => {
+    setSelectedPlaylistIds([]);
+    chrome.storage.local.remove(["selectedPlaylists"], () => {
+      setSavedSettings(null);
+    });
   };
 
   if (isLoading) {
@@ -230,73 +276,183 @@ function App() {
   }
 
   return (
-    <div className="App">
+    <div className="App" style={{ width: "400px", padding: "16px" }}>
       <header className="App-header">
         <h2>Playlist Pal</h2>
-        
+
         {!authToken ? (
           <div>
-            <p>Sign in to see your playlists on YouTube's homepage</p>
+            <p>Sign in to choose playlists for your YouTube homepage</p>
             <button onClick={handleSignIn}>Sign In with Google</button>
           </div>
         ) : (
           <div>
-            <div style={{ marginBottom: '16px' }}>
+            <div
+              style={{
+                marginBottom: "16px",
+                borderBottom: "1px solid #eee",
+                paddingBottom: "16px",
+              }}
+            >
               <p>✅ Signed in successfully!</p>
-              <button onClick={handleSignOut} style={{ marginRight: '8px' }}>Sign Out</button>
-              <button onClick={refreshPlaylists}>Refresh Playlists</button>
+              <button onClick={handleSignOut} style={{ marginRight: "8px" }}>
+                Sign Out
+              </button>
+              <button onClick={() => authToken && loadUserPlaylists(authToken)}>
+                Refresh Playlists
+              </button>
             </div>
 
             {/* Playlist Selection Section */}
-            <div style={{ marginBottom: '16px' }}>
-              <h3>Select Playlist to Display</h3>
-              
+            <div style={{ marginBottom: "16px" }}>
+              <h3>Choose Playlists to Display (Max 3)</h3>
+
               {isLoadingPlaylists ? (
                 <p>Loading playlists...</p>
               ) : playlists.length > 0 ? (
                 <div>
-                  <select 
-                    value={selectedPlaylistId} 
-                    onChange={(e) => setSelectedPlaylistId(e.target.value)}
-                    style={{ width: '100%', padding: '8px', marginBottom: '8px' }}
+                  <div
+                    style={{
+                      maxHeight: "200px",
+                      overflowY: "auto",
+                      border: "1px solid #ddd",
+                      borderRadius: "4px",
+                      padding: "8px",
+                    }}
                   >
                     {playlists.map((playlist) => (
-                      <option key={playlist.id} value={playlist.id}>
-                        {playlist.title} ({playlist.videoCount} videos)
-                      </option>
+                      <label
+                        key={playlist.id}
+                        style={{
+                          display: "block",
+                          padding: "8px",
+                          cursor: "pointer",
+                          borderBottom: "1px solid #f0f0f0",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedPlaylistIds.includes(playlist.id)}
+                          onChange={() => handlePlaylistToggle(playlist.id)}
+                          style={{ marginRight: "8px" }}
+                        />
+                        <strong>{playlist.title}</strong>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            color: "#666",
+                            marginLeft: "20px",
+                          }}
+                        >
+                          {playlist.videoCount} videos • {playlist.privacy}
+                        </div>
+                      </label>
                     ))}
-                  </select>
-                  
-                  {selectedPlaylistId && (
-                    <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                      {(() => {
-                        const selected = playlists.find(p => p.id === selectedPlaylistId);
-                        return selected ? (
-                          <div>
-                            <p><strong>Selected:</strong> {selected.title}</p>
-                            <p><strong>Videos:</strong> {selected.videoCount}</p>
-                            <p><strong>Privacy:</strong> {selected.privacy}</p>
-                          </div>
-                        ) : null;
-                      })()}
+                  </div>
+
+                  <div
+                    style={{ marginTop: "12px", display: "flex", gap: "8px" }}
+                  >
+                    <button
+                      onClick={savePlaylistSelection}
+                      disabled={selectedPlaylistIds.length === 0}
+                      style={{
+                        padding: "8px 16px",
+                        backgroundColor:
+                          selectedPlaylistIds.length > 0 ? "#1976d2" : "#ccc",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor:
+                          selectedPlaylistIds.length > 0
+                            ? "pointer"
+                            : "not-allowed",
+                      }}
+                    >
+                      Save Selection ({selectedPlaylistIds.length})
+                    </button>
+
+                    <button
+                      onClick={clearAllSelections}
+                      style={{
+                        padding: "8px 16px",
+                        backgroundColor: "#f44336",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Clear All
+                    </button>
+                  </div>
+
+                  {/* Current Selection Summary */}
+                  {selectedPlaylistIds.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: "12px",
+                        padding: "8px",
+                        backgroundColor: "#f5f5f5",
+                        borderRadius: "4px",
+                      }}
+                    >
+                      <strong>
+                        Selected ({selectedPlaylistIds.length}/3):
+                      </strong>
+                      <ul style={{ margin: "4px 0", paddingLeft: "16px" }}>
+                        {selectedPlaylistIds.map((id) => {
+                          const playlist = playlists.find((p) => p.id === id);
+                          return playlist ? (
+                            <li key={id} style={{ fontSize: "12px" }}>
+                              {playlist.title}
+                            </li>
+                          ) : null;
+                        })}
+                      </ul>
                     </div>
                   )}
-                  
-                  <button onClick={testCurrentPlaylist}>Test Selected Playlist</button>
+
+                  {/* Saved Settings Indicator */}
+                  {savedSettings && (
+                    <div
+                      style={{
+                        marginTop: "12px",
+                        padding: "8px",
+                        backgroundColor: "#e8f5e8",
+                        borderRadius: "4px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      ✅ Settings saved! {savedSettings.playlistIds.length}{" "}
+                      playlist(s) will appear on YouTube homepage.
+                    </div>
+                  )}
                 </div>
               ) : (
-                <p>No playlists found. Create some playlists on YouTube first!</p>
+                <p>
+                  No playlists found. Create some playlists on YouTube first!
+                </p>
               )}
             </div>
 
             {/* Future Features Preview */}
-            <div style={{ padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '4px', fontSize: '12px' }}>
-              <p><strong>Coming Soon:</strong></p>
-              <ul style={{ margin: '4px 0', paddingLeft: '16px' }}>
-                <li>Multiple playlist selection</li>
+            <div
+              style={{
+                padding: "12px",
+                backgroundColor: "#f5f5f5",
+                borderRadius: "4px",
+                fontSize: "12px",
+              }}
+            >
+              <p>
+                <strong>Coming Soon:</strong>
+              </p>
+              <ul style={{ margin: "4px 0", paddingLeft: "16px" }}>
                 <li>Sort by: Date, Views, Duration</li>
                 <li>Filter by: Category, Channel</li>
-                <li>Custom display settings</li>
+                <li>AI video summaries</li>
+                <li>Unlimited playlists (Premium)</li>
               </ul>
             </div>
           </div>

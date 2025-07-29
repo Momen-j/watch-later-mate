@@ -1,11 +1,28 @@
-/* Main container for the entire shelf */
+/* Fade transition for page changes */
+.playlist-video-grid.page-transition {
+  opacity: 0.3;
+}
+
+/* Video items with moderate size increase */
+.playlist-video-item {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 240px; /* Reduced from 280px to 240px */
+}/* Main container for the entire shelf */
 .custom-playlist-shelf {
-  padding: 24px 24px; /* FIXED: Added horizontal padding to match YouTube's layout */
-  /*border-bottom: 1px solid var(--yt-spec-10-percent-layer);*/
+  padding: 12px 24px;
   margin: 0;
-  width: 100%; /* Ensure container doesn't exceed viewport */
-  max-width: 100%; /* Prevent overflow */
-  box-sizing: border-box; /* Include padding in width calculation */
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Header container with title and arrows */
+.playlist-header-container {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
 }
 
 /* Shelf title style */
@@ -13,28 +30,87 @@
   color: var(--yt-spec-text-primary);
   font-size: 20px;
   font-weight: 700;
-  margin-bottom: 16px;
+  margin: 0;
+  flex-shrink: 0;
 }
 
-/* CHANGE: Use Flexbox for a horizontal, scrollable layout */
-.playlist-video-grid {
-  display: flex; /* Use flexbox for a single row */
-  overflow-x: auto; /* Enable horizontal scrolling */
-  overflow-y: hidden; /* Prevent vertical scrolling */
-  gap: 16px;
-  padding-bottom: 8px; /* Add space for the scrollbar */
-  width: 100%; /* Ensure it doesn't exceed parent width */
-  max-width: 100%; /* Prevent overflow beyond container */
-}
-
-/* CHANGE: Set a fixed, smaller width for each video item */
-.playlist-video-item {
+/* Container for the arrows next to title */
+.header-arrows-container {
   display: flex;
-  flex-direction: column;
-  flex: 0 0 210px; /* Set a fixed width of 210px for each item */
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-/* Thumbnail styling */
+/* Simple text-based pagination arrows */
+.pagination-arrow {
+  color: var(--yt-spec-text-secondary);
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  user-select: none;
+  line-height: 1;
+  min-width: 20px; /* Ensure consistent width */
+  text-align: center;
+}
+
+.pagination-arrow:hover {
+  color: var(--yt-spec-text-primary);
+  background-color: var(--yt-spec-badge-chip-background);
+}
+
+.pagination-arrow:active {
+  transform: scale(0.95);
+}
+
+/* Disabled state for invisible arrows */
+.pagination-arrow[style*="visibility: hidden"] {
+  pointer-events: none;
+}
+
+/* Updated video grid with end padding */
+.playlist-video-grid {
+  display: flex;
+  gap: 16px;
+  transition: opacity 0.3s ease;
+  min-height: 200px;
+  padding-right: 24px; /* Add right padding to match YouTube's spacing */
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 1200px) {
+  .playlist-video-item {
+    flex: 0 0 200px; /* Reduced from 240px to 200px */
+  }
+}
+
+@media (max-width: 768px) {
+  .playlist-video-item {
+    flex: 0 0 170px; /* Reduced from 200px to 170px */
+  }
+  
+  .playlist-video-grid {
+    padding-right: 16px; /* Smaller right padding on mobile */
+  }
+  
+  .pagination-arrow {
+    font-size: 14px;
+    padding: 3px 5px;
+  }
+  
+  .playlist-header-container {
+    gap: 10px;
+  }
+  
+  .header-arrows-container {
+    gap: 6px;
+  }
+}
+
+/* Existing thumbnail and video styling remains the same */
 .playlist-video-item .thumbnail-link {
   position: relative;
   display: block;
@@ -67,13 +143,12 @@
   flex-direction: column;
 }
 
-/* CHANGE: Reduce font size for smaller item layout */
 .video-title {
-  font-size: 14px; /* Reduced from 16px */
+  font-size: 14px;
   font-weight: 500;
   margin: 0;
   line-height: 1.4;
-  max-height: 3.9rem; /* Adjusted for smaller font size */
+  max-height: 3.9rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -83,9 +158,41 @@
   text-decoration: none;
 }
 
-/* CHANGE: Reduce font size for smaller item layout */
-.video-meta {
-  font-size: 12px; /* Reduced from 14px */
-  color: var(--yt-spec-text-secondary);
+.video-title a:hover {
+  color: var(--yt-spec-text-primary);
 }
 
+.video-meta {
+  font-size: 12px;
+  color: var(--yt-spec-text-secondary);
+  margin-top: 4px;
+}
+
+.video-meta .video-category {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.channel-name {
+  font-weight: 400;
+}
+
+.video-stats {
+  font-weight: 400;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .pagination-arrow {
+    color: var(--yt-spec-text-secondary);
+  }
+  
+  .pagination-arrow:hover {
+    color: var(--yt-spec-text-primary);
+    background-color: var(--yt-spec-badge-chip-background);
+  }
+}
