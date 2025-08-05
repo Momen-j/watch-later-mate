@@ -8,7 +8,7 @@
   display: flex;
   flex-direction: column;
   flex: 0 0 240px; /* Reduced from 280px to 240px */
-}/* Main container for the entire shelf */
+} /* Main container for the entire shelf */
 .custom-playlist-shelf {
   padding: 12px 24px;
   margin: 0;
@@ -91,20 +91,20 @@
   .playlist-video-item {
     flex: 0 0 170px; /* Reduced from 200px to 170px */
   }
-  
+
   .playlist-video-grid {
     padding-right: 16px; /* Smaller right padding on mobile */
   }
-  
+
   .pagination-arrow {
     font-size: 14px;
     padding: 3px 5px;
   }
-  
+
   .playlist-header-container {
     gap: 10px;
   }
-  
+
   .header-arrows-container {
     gap: 6px;
   }
@@ -190,9 +190,68 @@
   .pagination-arrow {
     color: var(--yt-spec-text-secondary);
   }
-  
+
   .pagination-arrow:hover {
     color: var(--yt-spec-text-primary);
     background-color: var(--yt-spec-badge-chip-background);
+  }
+}
+
+/* Improved responsive video grid */
+  @media (max-width: 1015px) {
+    .playlist-video-grid {
+      gap: 12px; /* Smaller gap on medium screens */
+    }
+  }
+
+  @media (max-width: 600px) {
+    .playlist-video-item {
+      flex: 0 0 140px; /* Even smaller on very small screens */
+    }
+
+    .playlist-video-grid {
+      gap: 8px;
+      padding-right: 12px;
+    }
+
+    .custom-playlist-shelf {
+      padding: 8px 16px; /* Reduced padding on mobile */
+    }
+  }
+
+/* Smooth transitions for responsive changes */
+.playlist-video-grid {
+  transition: opacity 0.3s ease, gap 0.2s ease;
+}
+
+.playlist-video-item {
+  transition: flex-basis 0.2s ease;
+}
+
+/* Prevent infinite scroll from moving our playlists */
+ytd-rich-section-renderer[data-custom-playlist="true"] {
+  position: relative;
+  z-index: 1;
+  margin: 20px 0;
+}
+
+/* Ensure our playlists are clearly separated from YouTube content */
+.custom-playlist-shelf {
+  background: var(--yt-spec-base-background);
+  border-radius: 8px;
+  margin: 16px 0;
+  position: relative;
+}
+
+/* Add subtle border to distinguish from YouTube content */
+@media (prefers-color-scheme: light) {
+  .custom-playlist-shelf {
+    border: 1px solid rgba(0, 0, 0, 0.1);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .custom-playlist-shelf {
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 }

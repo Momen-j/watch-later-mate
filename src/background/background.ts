@@ -24,11 +24,21 @@ function isYouTubeHomepage(url) {
   }
 }
 
+// Track which tabs have already been injected
+// eslint-disable-next-line prefer-const
+let injectedTabs = new Set();
+
 /**
  * Injects content script and CSS into the specified tab
  */
 async function injectPlaylistContent(tabId) {
   try {
+    // Prevent multiple injections in the same tab
+    if (injectedTabs.has(tabId)) {
+      console.log(`Content already injected in tab ${tabId}, skipping`);
+      return;
+    }
+
     // Inject the content script
     await chrome.scripting.executeScript({
       target: { tabId: tabId },
@@ -41,6 +51,8 @@ async function injectPlaylistContent(tabId) {
       files: ['styles.css']
     });
     
+    // Mark this tab as injected
+    injectedTabs.add(tabId);
     console.log(`Playlist content injected into tab ${tabId}`);
   } catch (error) {
     console.error('Failed to inject playlist content:', error);
@@ -99,6 +111,55 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 /**
+ * Listen for storage changes and notify content scripts
+ */
+chrome.storage.onChanged.addListener(async (changes, namespace) => {
+  console.log("📦 BACKGROUND: Storage change detected");
+  console.log("📦 Namespace:", namespace);
+  console.log("📦 Changes:", changes);
+  
+  if (namespace === 'local' && changes.selectedPlaylists) {
+    console.log("📦 Selected playlists changed!");
+    console.log("📦 Old value:", changes.selectedPlaylists.oldValue);
+    console.log("📦 New value:", changes.selectedPlaylists.newValue);
+    
+    console.log("🔍 Getting all YouTube tabs...");
+    
+    try {
+      // Get all YouTube tabs
+      const tabs = await chrome.tabs.query({ url: '*://*.youtube.com/*' });
+      console.log(`🔍 Found ${tabs.length} YouTube tabs`);
+      
+      for (const tab of tabs) {
+        if (tab.id && tab.url && tab.url.includes('youtube.com')) {
+          console.log(`📤 Sending message to tab ${tab.id} (${tab.url})`);
+          
+          try {
+            chrome.tabs.sendMessage(tab.id, { type: 'PLAYLISTS_UPDATED' }, (response) => {
+              if (chrome.runtime.lastError) {
+                console.log(`❌ Tab ${tab.id}: Could not notify (${chrome.runtime.lastError.message})`);
+              } else {
+                console.log(`✅ Tab ${tab.id}: Notified successfully`, response);
+              }
+            });
+          } catch (error) {
+            console.log(`💥 Tab ${tab.id}: Notification failed`, error);
+          }
+        } else {
+          console.log(`⏭️ Skipping tab ${tab.id}: no ID or not YouTube`);
+        }
+      }
+    } catch (error) {
+      console.error("💥 Error getting tabs:", error);
+    }
+  } else {
+    console.log("📦 Not a selectedPlaylists change, ignoring");
+  }
+});
+
+console.log("✅ Background script storage listener registered");
+
+/**
  * Handles SPA navigation within YouTube
  * This catches navigation that doesn't trigger a full page reload
  */
@@ -131,6 +192,23 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
  */
 chrome.tabs.onRemoved.addListener((tabId) => {
   delete lastUrl[tabId];
+});
+
+/**
+ * Clean up injection tracking when tabs are closed
+ */
+chrome.tabs.onRemoved.addListener((tabId) => {
+  delete lastUrl[tabId];
+  injectedTabs.delete(tabId); // Clean up injection tracking
+});
+
+/**
+ * Clean up injection tracking on navigation away from YouTube
+ */
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url && !changeInfo.url.includes('youtube.com')) {
+    injectedTabs.delete(tabId);
+  }
 });
 
 /**

@@ -1,6 +1,22 @@
 // Enhanced content script with YouTube API integration and pagination
 import { YoutubeApiService } from "../api/YoutubeApiService";
 
+console.log("🚀 CONTENT SCRIPT LOADED - YouTube Playlist Extension");
+console.log("📍 Current URL:", window.location.href);
+console.log("⏰ Load time:", new Date().toISOString());
+
+// Test message listener
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  console.log("📨 CONTENT SCRIPT: Message received!", message);
+
+  if (message.type === "PLAYLISTS_UPDATED") {
+    console.log("🔄 PLAYLISTS_UPDATED received");
+    sendResponse({ success: true });
+  }
+});
+
+console.log("✅ Content script setup complete");
+
 // Updated Video interface to match API service (with categories)
 interface Video {
   contentDetails: {
@@ -425,9 +441,7 @@ async function fetchMultiplePlaylistsData(): Promise<
     const apiService = new YoutubeApiService(authToken);
 
     // Get user's playlists info (only if we need non-LIKED_VIDEOS playlists)
-    const regularPlaylistIds = selectedPlaylistIds.filter(
-      (id) => id !== "LL"
-    );
+    const regularPlaylistIds = selectedPlaylistIds.filter((id) => id !== "LL");
     const allPlaylists =
       regularPlaylistIds.length > 0
         ? await apiService.getUserPlaylists(25)
@@ -488,7 +502,7 @@ async function fetchMultiplePlaylistsData(): Promise<
             videos: videos,
             paginationState: {
               currentPage: 0,
-              videosPerPage: 4,
+              videosPerPage: calculateVideosPerPage(),
               totalVideos: videos.length,
               allVideos: videos,
             },
@@ -517,6 +531,8 @@ async function fetchMultiplePlaylistsData(): Promise<
 /**
  * Helper functions for DOM insertion (unchanged from original)
  */
+/* 
+OLD FALLBACK CODE
 function findTopLevelParent(
   element: HTMLElement,
   container: HTMLElement
@@ -527,6 +543,7 @@ function findTopLevelParent(
   }
   return current.parentElement === container ? current : null;
 }
+
 
 function insertWithFallback(
   contentContainer: HTMLElement,
@@ -545,127 +562,227 @@ function insertWithFallback(
   }
   console.log("Custom playlist injected in content flow (fallback)! 🎉");
 }
+*/
 
 /**
- * Creates and injects multiple playlists with real data
+ * Dynamically calculates videos per row and injects playlist without disrupting grid
+ */
+function calculateVideosPerRow(contentContainer: HTMLElement): number {
+  try {
+    // Get container width
+    const containerWidth = contentContainer.offsetWidth;
+    console.log(`📏 Container width: ${containerWidth}px`);
+    
+    // Get first video element
+    const firstVideo = contentContainer.querySelector('ytd-rich-item-renderer') as HTMLElement;
+    if (!firstVideo) {
+      console.warn("⚠️ No video elements found for width calculation");
+      return 4; // Default fallback
+    }
+    
+    // Get video width including margins/padding
+    const videoRect = firstVideo.getBoundingClientRect();
+    const videoStyles = window.getComputedStyle(firstVideo);
+    const marginLeft = parseFloat(videoStyles.marginLeft) || 0;
+    const marginRight = parseFloat(videoStyles.marginRight) || 0;
+    const videoWidth = videoRect.width - marginRight;
+    
+    console.log(`📏 Video width (minus right margins): ${videoWidth}px`);
+    console.log(`📏 Video margins: left=${marginLeft}px, right=${marginRight}px`);
+    
+    // Calculate videos per row
+    const videosPerRow = Math.floor(containerWidth / videoWidth);
+    console.log(`📊 Calculated videos per row: ${videosPerRow}`);
+    
+    // Sanity check - YouTube typically has 2-6 videos per row
+    if (videosPerRow < 2 || videosPerRow > 8) {
+      console.warn(`⚠️ Unusual videos per row: ${videosPerRow}, using fallback of 4`);
+      return 4;
+    }
+    
+    return videosPerRow;
+    
+  } catch (error) {
+    console.error("❌ Error calculating videos per row:", error);
+    return 4; // Fallback
+  }
+}
+
+/**
+ * Creates and injects multiple playlists after first row using dynamic detection - FINAL VERSION
  */
 function injectMultiplePlaylistsWithData(
   playlistsWithVideos: MultiPlaylistData[]
 ): void {
+  console.log("🎬 Starting dynamic playlist injection after first row...");
+  
   // Store playlists data globally
   playlistsData = playlistsWithVideos;
 
-  // Find the main content container that holds all the sections
-  const contentContainer = document.querySelector<HTMLElement>(
-    "ytd-rich-grid-renderer #contents, ytd-two-column-browse-results-renderer #primary #contents"
-  );
+  // Find the main content container
+  let contentContainer: HTMLElement | null = null;
+  
+  const containerSelectors = [
+    "ytd-rich-grid-renderer #contents",
+    "ytd-two-column-browse-results-renderer #primary #contents",
+    "ytd-browse #primary #contents",
+    "#contents.ytd-rich-grid-renderer",
+    "#primary #contents"
+  ];
+  
+  for (const selector of containerSelectors) {
+    contentContainer = document.querySelector<HTMLElement>(selector);
+    if (contentContainer) {
+      console.log(`✅ Found container with selector: ${selector}`);
+      break;
+    }
+  }
 
   if (!contentContainer) {
-    console.error("Could not find main content container.");
+    console.error("❌ Could not find any content container");
     return;
   }
 
-  // Look for the Shorts section within the content container
-  let shortsSection: HTMLElement | null = null;
-
-  const shortsSelectors = [
-    "ytd-rich-section-renderer[is-shorts]",
-    "ytd-reel-shelf-renderer",
-    'ytd-rich-shelf-renderer:has([title*="Shorts"])',
-    '[aria-label*="Shorts"]',
-  ];
-
-  for (const selector of shortsSelectors) {
-    shortsSection = contentContainer.querySelector<HTMLElement>(selector);
-    if (shortsSection) break;
+  // Get all video elements
+  const allVideos = contentContainer.querySelectorAll('ytd-rich-item-renderer');
+  console.log(`📹 Found ${allVideos.length} total video elements`);
+  
+  if (allVideos.length === 0) {
+    console.error("❌ No video elements found in container");
+    return;
   }
 
-  if (!shortsSection) {
-    const allSections = contentContainer.querySelectorAll(
-      "ytd-rich-section-renderer, ytd-rich-shelf-renderer, ytd-reel-shelf-renderer"
-    );
-    for (const section of allSections) {
-      if (section.textContent?.toLowerCase().includes("shorts")) {
-        shortsSection = section as HTMLElement;
-        break;
-      }
-    }
+  // Calculate videos per row dynamically
+  const videosPerRow = calculateVideosPerRow(contentContainer);
+  
+  // Find insertion point (after first row)
+  let insertionPoint: Element | null = null;
+  
+  if (allVideos.length >= videosPerRow) {
+    // Insert after the last video of the first row
+    insertionPoint = allVideos[videosPerRow - 1]; // -1 because array is 0-indexed
+    console.log(`🎯 DYNAMIC: Will insert after video ${videosPerRow} (first row complete)`);
+  } else {
+    // Not enough videos for a full row, insert after last video
+    insertionPoint = allVideos[allVideos.length - 1];
+    console.warn(`⚠️ Only ${allVideos.length} videos found, less than calculated row size of ${videosPerRow}`);
+    console.warn(`⚠️ Will insert after last video`);
+  }
+
+  if (!insertionPoint || insertionPoint.parentElement !== contentContainer) {
+    console.error("❌ Invalid insertion point");
+    return;
   }
 
   // Create and inject each playlist
-  let insertionPoint = shortsSection;
+  playlistsWithVideos.forEach((playlistData, index) => {
+    console.log(`🎬 Creating playlist ${index + 1}/${playlistsWithVideos.length}: "${playlistData.title}"`);
+    
+    try {
+      // Create playlist wrapper styled as ytd-rich-item-renderer but full width
+      const playlistWrapper = document.createElement("ytd-rich-item-renderer");
+      playlistWrapper.className = "style-scope ytd-rich-grid-renderer";
+      playlistWrapper.setAttribute("data-playlist-id", playlistData.id);
+      playlistWrapper.setAttribute("data-custom-playlist", "true");
+      
+      // Add flexbox styling to make it take full width and act as row break
+      playlistWrapper.style.cssText = `
+        width: 100% !important;
+        flex-basis: 100% !important;
+        max-width: 100% !important;
+        margin: 16px 0 !important;
+        box-sizing: border-box !important;
+      `;
 
-  playlistsWithVideos.forEach((playlistData) => {
-    // Create playlist wrapper
-    const playlistWrapper = document.createElement("ytd-rich-section-renderer");
-    playlistWrapper.className = "style-scope ytd-rich-grid-renderer";
-    playlistWrapper.setAttribute("data-playlist-id", playlistData.id);
+      const playlistContainer = document.createElement("div");
+      playlistContainer.id = `custom-playlist-container-${playlistData.id}`;
+      playlistContainer.className = "custom-playlist-shelf";
 
-    const playlistContainer = document.createElement("div");
-    playlistContainer.id = `custom-playlist-container-${playlistData.id}`;
-    playlistContainer.className = "custom-playlist-shelf";
+      // Create header with title and arrows
+      const headerWithArrows = createHeaderWithArrows(
+        playlistData.title,
+        playlistData.id
+      );
+      playlistContainer.appendChild(headerWithArrows);
 
-    // Create header with title and arrows
-    const headerWithArrows = createHeaderWithArrows(
-      playlistData.title,
-      playlistData.id
-    );
-    playlistContainer.appendChild(headerWithArrows);
+      // Create video grid
+      const videoGrid = document.createElement("div");
+      videoGrid.className = "playlist-video-grid";
+      videoGrid.setAttribute("data-playlist-id", playlistData.id);
 
-    // Create video grid
-    const videoGrid = document.createElement("div");
-    videoGrid.className = "playlist-video-grid";
-    videoGrid.setAttribute("data-playlist-id", playlistData.id);
+      playlistContainer.appendChild(videoGrid);
+      playlistWrapper.appendChild(playlistContainer);
 
-    playlistContainer.appendChild(videoGrid);
-    playlistWrapper.appendChild(playlistContainer);
-
-    // Insert the playlist
-    if (insertionPoint) {
-      const insertionParent = insertionPoint.parentElement;
-
-      if (insertionParent && insertionParent === contentContainer) {
-        contentContainer.insertBefore(playlistWrapper, insertionPoint);
-        console.log(
-          `Custom playlist "${playlistData.title}" injected above insertion point! 🎉`
-        );
-      } else if (insertionParent) {
-        const topLevelParent = findTopLevelParent(
-          insertionPoint,
-          contentContainer
-        );
-        if (
-          topLevelParent &&
-          topLevelParent.parentElement === contentContainer
-        ) {
-          contentContainer.insertBefore(playlistWrapper, topLevelParent);
-          console.log(
-            `Custom playlist "${playlistData.title}" injected above parent section! 🎉`
-          );
-        } else {
-          contentContainer.appendChild(playlistWrapper);
-          console.log(
-            `Custom playlist "${playlistData.title}" injected at end! 🎉`
-          );
+      // INJECTION LOGIC
+      let insertionSuccess = false;
+      
+      if (index === 0) {
+        // First playlist: Insert after the calculated insertion point
+        try {
+          contentContainer.insertBefore(playlistWrapper, insertionPoint.nextSibling);
+          insertionSuccess = true;
+          console.log(`✅ DYNAMIC: Playlist "${playlistData.title}" inserted after ${videosPerRow} videos (first row)`);
+        } catch (error) {
+          console.error(`❌ Failed dynamic insertion for "${playlistData.title}":`, error);
         }
       } else {
-        insertWithFallback(contentContainer, playlistWrapper);
+        // Subsequent playlists: Insert after previous playlist
+        try {
+          const previousPlaylist = document.querySelector(`ytd-rich-item-renderer[data-playlist-id="${playlistsWithVideos[index-1].id}"]`);
+          if (previousPlaylist && previousPlaylist.parentElement === contentContainer) {
+            contentContainer.insertBefore(playlistWrapper, previousPlaylist.nextSibling);
+            insertionSuccess = true;
+            console.log(`✅ Playlist "${playlistData.title}" inserted after previous playlist`);
+          }
+        } catch (error) {
+          console.error(`❌ Failed to insert after previous playlist:`, error);
+        }
       }
-    } else {
-      // First playlist, use fallback insertion
-      insertWithFallback(contentContainer, playlistWrapper);
-    }
+      
+      // EMERGENCY FALLBACK: Simple append
+      if (!insertionSuccess) {
+        try {
+          contentContainer.appendChild(playlistWrapper);
+          console.warn(`⚠️ EMERGENCY: Playlist "${playlistData.title}" appended to end (last resort)`);
+        } catch (error) {
+          console.error(`❌ Even emergency fallback failed for "${playlistData.title}":`, error);
+          return;
+        }
+      }
 
-    // Update insertion point for next playlist (insert subsequent playlists after this one)
-    insertionPoint = playlistWrapper.nextElementSibling as HTMLElement;
+      // Verify the element was actually added
+      const addedElement = document.querySelector(`ytd-rich-item-renderer[data-playlist-id="${playlistData.id}"]`);
+      if (addedElement) {
+        console.log(`🎉 Playlist "${playlistData.title}" successfully added to DOM`);
+      } else {
+        console.error(`❌ Playlist "${playlistData.title}" not found in DOM after insertion`);
+      }
+
+    } catch (error) {
+      console.error(`💥 Failed to create playlist "${playlistData.title}":`, error);
+    }
   });
 
   // Initialize all video grids and setup event listeners
+  console.log("🎮 Setting up video grids and event listeners...");
+  
   playlistsWithVideos.forEach((playlistData) => {
-    updateVideoGrid(playlistData.id);
+    try {
+      updateVideoGrid(playlistData.id);
+      console.log(`✅ Video grid updated for "${playlistData.title}"`);
+    } catch (error) {
+      console.error(`❌ Failed to update video grid for "${playlistData.title}":`, error);
+    }
   });
 
-  setupPaginationEventListeners();
+  try {
+    setupPaginationEventListeners();
+    console.log("✅ Pagination event listeners set up");
+  } catch (error) {
+    console.error("❌ Failed to setup pagination listeners:", error);
+  }
+  
+  console.log("🎉 Dynamic playlist injection completed!");
 }
 
 /**
@@ -695,7 +812,7 @@ async function injectPlaylists(): Promise<void> {
 }
 
 /**
- * Enhanced injection with better timing and fallback strategies
+ * Enhanced injection with persistent observer and dynamic video count
  */
 async function injectPlaylistsWithObserver(): Promise<void> {
   // Check if already exists
@@ -707,42 +824,140 @@ async function injectPlaylistsWithObserver(): Promise<void> {
   // Try immediate injection first
   await injectPlaylists();
 
-  // If that fails, set up an observer to watch for content loading
-  if (!document.querySelector('[id^="custom-playlist-container-"]')) {
-    const observer = new MutationObserver(async (mutations) => {
-      // Check if we've already injected
-      if (document.querySelector('[id^="custom-playlist-container-"]')) {
-        observer.disconnect();
-        return;
-      }
+  // Set up persistent observer (no timeout)
+  const observer = new MutationObserver(async (mutations) => {
+    // Check if we've already injected
+    if (document.querySelector('[id^="custom-playlist-container-"]')) {
+      return; // Don't disconnect - keep watching for layout changes
+    }
 
-      // Look for new content being added
-      for (const mutation of mutations) {
-        if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-          // Try to inject again when new content is added
-          setTimeout(async () => {
-            if (!document.querySelector('[id^="custom-playlist-container-"]')) {
-              await injectPlaylists();
-            }
-          }, 100);
-          break;
+    // Look for new content being added
+    for (const mutation of mutations) {
+      if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
+        // Try to inject again when new content is added
+        setTimeout(async () => {
+          if (!document.querySelector('[id^="custom-playlist-container-"]')) {
+            await injectPlaylists();
+          }
+        }, 100);
+        break;
+      }
+    }
+  });
+
+  // Observe the main content area persistently
+  const mainContent =
+    document.querySelector('ytd-browse[page-subtype="home"]') || document.body;
+  observer.observe(mainContent, {
+    childList: true,
+    subtree: true,
+  });
+
+  // Add window resize handler for layout changes
+  window.addEventListener("resize", async () => {
+    // Update video counts when window resizes
+    playlistsData.forEach((playlist) => {
+      const newVideosPerPage = calculateVideosPerPage();
+      playlist.paginationState.videosPerPage = newVideosPerPage;
+      playlist.paginationState.currentPage = 0; // Reset to first page
+      updateVideoGrid(playlist.id);
+    });
+  });
+
+  // Add visibility change handler for minimize/restore
+  document.addEventListener("visibilitychange", async () => {
+    if (!document.hidden) {
+      // Re-inject if needed when tab becomes visible
+      setTimeout(async () => {
+        if (!document.querySelector('[id^="custom-playlist-container-"]')) {
+          await injectPlaylists();
         }
-      }
-    });
-
-    // Observe the main content area
-    const mainContent =
-      document.querySelector('ytd-browse[page-subtype="home"]') ||
-      document.body;
-    observer.observe(mainContent, {
-      childList: true,
-      subtree: true,
-    });
-
-    // Stop observing after 15 seconds
-    setTimeout(() => observer.disconnect(), 15000);
-  }
+      }, 500);
+    }
+  });
 }
+
+/**
+ * Dynamically calculates videos per page based on screen width
+ */
+function calculateVideosPerPage(): number {
+  const screenWidth = window.innerWidth;
+
+  // YouTube's responsive breakpoints
+  if (screenWidth >= 1728) return 6; // Extra large screens
+  if (screenWidth >= 1312) return 5; // Large screens
+  if (screenWidth >= 1015) return 4; // Medium screens
+  if (screenWidth >= 768) return 3; // Small screens
+  return 2; // Mobile
+}
+/**
+ * Listen for messages from popup/background when playlists are selected
+ */
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("📨 CONTENT SCRIPT: Message received!");
+  console.log("📨 Message type:", message.type);
+  console.log("📨 Full message:", message);
+  console.log("📨 Sender:", sender);
+
+  try {
+    if (message.type === "PLAYLISTS_UPDATED") {
+      console.log("🔄 PLAYLISTS_UPDATED received, processing...");
+
+      // Remove existing playlists first
+      const existingPlaylists = document.querySelectorAll(
+        '[data-custom-playlist="true"]'
+      );
+      console.log(
+        `🗑️ Found ${existingPlaylists.length} existing playlists to remove`
+      );
+
+      existingPlaylists.forEach((playlist, index) => {
+        const playlistId = playlist.getAttribute("data-playlist-id");
+        console.log(
+          `🗑️ Removing existing playlist ${index + 1}: ${playlistId}`
+        );
+        playlist.remove();
+      });
+
+      // Clear global state
+      playlistsData = [];
+      console.log("🧹 Cleared global playlist data");
+
+      // Wait a moment then inject new playlists
+      setTimeout(async () => {
+        try {
+          console.log("🚀 Starting playlist re-injection...");
+          await injectPlaylists();
+          console.log("✅ Re-injection completed successfully");
+          sendResponse({ success: true });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } catch (error: any) {
+          console.error("❌ Failed to re-inject playlists:", error);
+          sendResponse({ success: false, error: error.message });
+        }
+      }, 300);
+
+      // Return true to indicate we'll respond asynchronously
+      return true;
+    }
+
+    if (message.type === "PING") {
+      console.log("🏓 PING received, responding...");
+      sendResponse({ success: true, message: "Content script is active" });
+      return;
+    }
+
+    console.log("❓ Unknown message type:", message.type);
+    sendResponse({ success: false, error: "Unknown message type" });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (error: any) {
+    console.error("💥 Error in message listener:", error);
+    sendResponse({ success: false, error: error.message });
+  }
+});
+
+console.log("✅ Content script message listener registered");
 
 // Wait a bit longer for YouTube's SPA to load, then try injection
 setTimeout(injectPlaylistsWithObserver, 1000);
