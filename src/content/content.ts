@@ -687,16 +687,26 @@ function injectMultiplePlaylistsWithData(
       
       // Add flexbox styling to make it take full width and act as row break
       playlistWrapper.style.cssText = `
-        width: 100% !important;
-        flex-basis: 100% !important;
-        max-width: 100% !important;
-        margin: 16px 0 !important;
-        box-sizing: border-box !important;
-      `;
+      width: 100% !important;
+      flex-basis: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      margin-top: 2px !important;      // ← Space above playlist
+      padding-bottom: 24px !important;   // ← Space below playlist
+      box-sizing: border-box !important;
+    `;
 
       const playlistContainer = document.createElement("div");
       playlistContainer.id = `custom-playlist-container-${playlistData.id}`;
       playlistContainer.className = "custom-playlist-shelf";
+
+      // Add position-based classes
+      if (index === 0) {
+        playlistContainer.classList.add("first-playlist");
+      }
+      if (index === playlistsWithVideos.length - 1) {
+        playlistContainer.classList.add("last-playlist");
+      }
 
       // Create header with title and arrows
       const headerWithArrows = createHeaderWithArrows(
@@ -859,7 +869,7 @@ async function injectPlaylistsWithObserver(): Promise<void> {
     playlistsData.forEach((playlist) => {
       const newVideosPerPage = calculateVideosPerPage();
       playlist.paginationState.videosPerPage = newVideosPerPage;
-      playlist.paginationState.currentPage = 0; // Reset to first page
+      //playlist.paginationState.currentPage = 0; // Reset to first page
       updateVideoGrid(playlist.id);
     });
   });
@@ -884,7 +894,7 @@ function calculateVideosPerPage(): number {
   const screenWidth = window.innerWidth;
 
   // YouTube's responsive breakpoints
-  if (screenWidth >= 1728) return 6; // Extra large screens
+  //if (screenWidth >= 1728) return 6; // Extra large screens
   if (screenWidth >= 1312) return 5; // Large screens
   if (screenWidth >= 1015) return 4; // Medium screens
   if (screenWidth >= 768) return 3; // Small screens

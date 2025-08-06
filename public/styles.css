@@ -7,7 +7,7 @@
 .playlist-video-item {
   display: flex;
   flex-direction: column;
-  flex: 0 0 240px; /* Reduced from 280px to 240px */
+  flex: 0 0 260px; /* Reduced from 280px to 240px */
 } /* Main container for the entire shelf */
 .custom-playlist-shelf {
   padding: 12px 24px;
@@ -15,6 +15,7 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* Header container with title and arrows */
@@ -78,6 +79,7 @@
   transition: opacity 0.3s ease;
   min-height: 200px;
   padding-right: 24px; /* Add right padding to match YouTube's spacing */
+  overflow-x: hidden;
 }
 
 /* Responsive adjustments for smaller screens */
@@ -129,7 +131,7 @@
   position: absolute;
   bottom: 8px;
   right: 8px;
-  background-color: rgba(0, 0, 0, 0.8);
+  background-color: rgba(0, 0, 0, 0.6);
   color: #fff;
   padding: 2px 6px;
   border-radius: 4px;
@@ -182,7 +184,7 @@
 .video-stats {
   font-weight: 400;
   margin-top: 4px;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 /* Dark mode support */
@@ -228,30 +230,27 @@
   transition: flex-basis 0.2s ease;
 }
 
-/* Prevent infinite scroll from moving our playlists */
+/* Prevent infinite scroll from moving playlists */
 ytd-rich-section-renderer[data-custom-playlist="true"] {
   position: relative;
   z-index: 1;
   margin: 20px 0;
 }
 
-/* Ensure our playlists are clearly separated from YouTube content */
+/* Ensure playlists are clearly separated from YouTube content */
 .custom-playlist-shelf {
   background: var(--yt-spec-base-background);
   border-radius: 8px;
-  margin: 16px 0;
+  margin-bottom: 4px;
   position: relative;
 }
 
-/* Add subtle border to distinguish from YouTube content */
-@media (prefers-color-scheme: light) {
-  .custom-playlist-shelf {
-    border: 1px solid rgba(0, 0, 0, 0.1);
-  }
+/* Reduce space above the first playlist */
+.custom-playlist-shelf.first-playlist {
+  margin-top: -16px;  /* Less space from videos above */
 }
 
-@media (prefers-color-scheme: dark) {
-  .custom-playlist-shelf {
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
+/* Extra space after the last playlist */
+.custom-playlist-shelf.last-playlist {
+  margin-bottom: 16px;  /* Larger gap to YouTube content */
 }
