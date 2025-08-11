@@ -1,6 +1,15 @@
 // Enhanced content script with YouTube API integration and pagination
 import { YoutubeApiService } from "../api/YoutubeApiService";
 
+// Prevent multiple script execution (TypeScript-friendly)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+if ((window as any).playlistExtensionLoaded) {
+  console.log("🛑 Content script already loaded, skipping");
+  throw new Error("Content script already loaded");
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(window as any).playlistExtensionLoaded = true;
+
 console.log("🚀 CONTENT SCRIPT LOADED - YouTube Playlist Extension");
 console.log("📍 Current URL:", window.location.href);
 console.log("⏰ Load time:", new Date().toISOString());
@@ -609,6 +618,52 @@ function calculateVideosPerRow(contentContainer: HTMLElement): number {
 }
 
 /**
+ * Detects if YouTube Shorts section is right after the first row of videos
+ */
+function detectShortsAfterFirstRow(contentContainer: HTMLElement, videosPerRow: number): HTMLElement | null {
+  const allVideos = contentContainer.querySelectorAll('ytd-rich-item-renderer');
+  
+  if (allVideos.length < videosPerRow) {
+    return null; // Not enough videos for a full row
+  }
+  
+  // Get the element right after the last video in the first row
+  const lastVideoInFirstRow = allVideos[videosPerRow - 1];
+  const nextElement = lastVideoInFirstRow.nextElementSibling;
+  
+  if (!nextElement) {
+    console.log("🔍 No element after first row");
+    return null;
+  }
+  
+  console.log("🔍 Element after first row:", nextElement.tagName, nextElement.className);
+  
+  // Check if it's a Shorts section using the old selectors
+  const shortsSelectors = [
+    "ytd-rich-section-renderer[is-shorts]",
+    "ytd-reel-shelf-renderer",
+    'ytd-rich-shelf-renderer:has([title*="Shorts"])',
+    '[aria-label*="Shorts"]'
+  ];
+  
+  for (const selector of shortsSelectors) {
+    if (nextElement.matches && nextElement.matches(selector)) {
+      console.log("🎯 SHORTS DETECTED: Found Shorts section right after first row using selector:", selector);
+      return nextElement as HTMLElement;
+    }
+  }
+  
+  // Also check text content for "Shorts"
+  if (nextElement.textContent?.toLowerCase().includes("shorts")) {
+    console.log("🎯 SHORTS DETECTED: Found Shorts section by text content");
+    return nextElement as HTMLElement;
+  }
+  
+  console.log("🔍 No Shorts section detected after first row");
+  return null;
+}
+
+/**
  * Creates and injects multiple playlists after first row using dynamic detection - FINAL VERSION
  */
 function injectMultiplePlaylistsWithData(
@@ -655,19 +710,27 @@ function injectMultiplePlaylistsWithData(
   // Calculate videos per row dynamically
   const videosPerRow = calculateVideosPerRow(contentContainer);
   
-  // Find insertion point (after first row)
-  let insertionPoint: Element | null = null;
-  
+ // Check if Shorts section is right after first row
+const shortsSection = detectShortsAfterFirstRow(contentContainer, videosPerRow);
+let insertionPoint: Element | null = null;
+let usesShortsLogic = false;
+
+if (shortsSection) {
+  // Use old Shorts injection logic - insert ABOVE the Shorts section
+  insertionPoint = shortsSection;
+  usesShortsLogic = true;
+  console.log("🎯 SHORTS LOGIC: Will insert above Shorts section");
+} else {
+  // Use current Y-position detection logic
   if (allVideos.length >= videosPerRow) {
-    // Insert after the last video of the first row
-    insertionPoint = allVideos[videosPerRow - 1]; // -1 because array is 0-indexed
+    insertionPoint = allVideos[videosPerRow - 1];
     console.log(`🎯 DYNAMIC: Will insert after video ${videosPerRow} (first row complete)`);
   } else {
-    // Not enough videos for a full row, insert after last video
     insertionPoint = allVideos[allVideos.length - 1];
     console.warn(`⚠️ Only ${allVideos.length} videos found, less than calculated row size of ${videosPerRow}`);
     console.warn(`⚠️ Will insert after last video`);
   }
+}
 
   if (!insertionPoint || insertionPoint.parentElement !== contentContainer) {
     console.error("❌ Invalid insertion point");
@@ -727,14 +790,22 @@ function injectMultiplePlaylistsWithData(
       let insertionSuccess = false;
       
       if (index === 0) {
-        // First playlist: Insert after the calculated insertion point
-        try {
+      // First playlist: Insert using appropriate logic
+      try {
+        if (usesShortsLogic) {
+          // Insert ABOVE the Shorts section (like old code)
+          contentContainer.insertBefore(playlistWrapper, insertionPoint);
+          insertionSuccess = true;
+          console.log(`✅ SHORTS: Playlist "${playlistData.title}" inserted above Shorts section`);
+        } else {
+          // Insert after the calculated insertion point (current logic)
           contentContainer.insertBefore(playlistWrapper, insertionPoint.nextSibling);
           insertionSuccess = true;
           console.log(`✅ DYNAMIC: Playlist "${playlistData.title}" inserted after ${videosPerRow} videos (first row)`);
-        } catch (error) {
-          console.error(`❌ Failed dynamic insertion for "${playlistData.title}":`, error);
         }
+      } catch (error) {
+        console.error(`❌ Failed insertion for "${playlistData.title}":`, error);
+      }
       } else {
         // Subsequent playlists: Insert after previous playlist
         try {
@@ -834,26 +905,33 @@ async function injectPlaylistsWithObserver(): Promise<void> {
   // Try immediate injection first
   await injectPlaylists();
 
-  // Set up persistent observer (no timeout)
-  const observer = new MutationObserver(async (mutations) => {
-    // Check if we've already injected
-    if (document.querySelector('[id^="custom-playlist-container-"]')) {
-      return; // Don't disconnect - keep watching for layout changes
-    }
+  // Set up observer with proper cleanup
+const observer = new MutationObserver(async (mutations) => {
+  // Check if we've already injected
+  if (document.querySelector('[id^="custom-playlist-container-"]')) {
+    console.log("✅ Playlists found, disconnecting observer to prevent duplicates");
+    observer.disconnect(); // DISCONNECT once injection is successful
+    return;
+  }
 
-    // Look for new content being added
-    for (const mutation of mutations) {
-      if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-        // Try to inject again when new content is added
-        setTimeout(async () => {
-          if (!document.querySelector('[id^="custom-playlist-container-"]')) {
-            await injectPlaylists();
+  // Look for new content being added
+  for (const mutation of mutations) {
+    if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
+      // Try to inject again when new content is added
+      setTimeout(async () => {
+        if (!document.querySelector('[id^="custom-playlist-container-"]')) {
+          await injectPlaylists();
+          // Check again after injection and disconnect if successful
+          if (document.querySelector('[id^="custom-playlist-container-"]')) {
+            console.log("✅ Injection successful, disconnecting observer");
+            observer.disconnect();
           }
-        }, 100);
-        break;
-      }
+        }
+      }, 100);
+      break;
     }
-  });
+  }
+});
 
   // Observe the main content area persistently
   const mainContent =

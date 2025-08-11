@@ -24,20 +24,13 @@ function isYouTubeHomepage(url) {
   }
 }
 
-// Track which tabs have already been injected
-// eslint-disable-next-line prefer-const
-let injectedTabs = new Set();
-
 /**
  * Injects content script and CSS into the specified tab
  */
 async function injectPlaylistContent(tabId) {
   try {
-    // Prevent multiple injections in the same tab
-    if (injectedTabs.has(tabId)) {
-      console.log(`Content already injected in tab ${tabId}, skipping`);
-      return;
-    }
+    // Always inject content script - let the content script handle duplicate prevention
+    console.log(`Injecting content script into tab ${tabId}`);
 
     // Inject the content script
     await chrome.scripting.executeScript({
@@ -51,8 +44,6 @@ async function injectPlaylistContent(tabId) {
       files: ['styles.css']
     });
     
-    // Mark this tab as injected
-    injectedTabs.add(tabId);
     console.log(`Playlist content injected into tab ${tabId}`);
   } catch (error) {
     console.error('Failed to inject playlist content:', error);
@@ -192,23 +183,6 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
  */
 chrome.tabs.onRemoved.addListener((tabId) => {
   delete lastUrl[tabId];
-});
-
-/**
- * Clean up injection tracking when tabs are closed
- */
-chrome.tabs.onRemoved.addListener((tabId) => {
-  delete lastUrl[tabId];
-  injectedTabs.delete(tabId); // Clean up injection tracking
-});
-
-/**
- * Clean up injection tracking on navigation away from YouTube
- */
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.url && !changeInfo.url.includes('youtube.com')) {
-    injectedTabs.delete(tabId);
-  }
 });
 
 /**
