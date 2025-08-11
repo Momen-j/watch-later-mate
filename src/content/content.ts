@@ -6,7 +6,7 @@ import { YoutubeApiService } from "../api/YoutubeApiService";
 if ((window as any).playlistExtensionLoaded) {
   console.log("🛑 Content script already loaded, skipping");
   throw new Error("Content script already loaded");
-}
+} else {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).playlistExtensionLoaded = true;
 
@@ -62,6 +62,21 @@ interface MultiPlaylistData {
   paginationState: PlaylistPaginationState;
 }
 
+interface PlaylistFilterSortSettings {
+  filters: {
+    viewCount: { min: number; max: number | null };
+    uploadDate: 'all' | 'week' | 'month' | 'year';
+    duration: { min: number; max: number | null }; // in seconds
+    channels: string[];
+    categories: string[];
+    keywords: string;
+  };
+  sort: {
+    by: 'default' | 'views' | 'date' | 'duration' | 'title' | 'channel' | 'random';
+    direction: 'asc' | 'desc';
+  };
+}
+
 // Global state for all playlists
 let playlistsData: MultiPlaylistData[] = [];
 
@@ -85,6 +100,25 @@ function formatDuration(duration: string): string {
       .padStart(2, "0")}`;
   }
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Parse YouTube duration string to seconds
+ */
+function parseDurationToSeconds(duration: string): number {
+  try {
+    const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+    if (!match) return 0;
+    
+    const hours = match[1] ? parseInt(match[1].replace('H', '')) : 0;
+    const minutes = match[2] ? parseInt(match[2].replace('M', '')) : 0;
+    const seconds = match[3] ? parseInt(match[3].replace('S', '')) : 0;
+    
+    return hours * 3600 + minutes * 60 + seconds;
+  } catch (error) {
+    console.warn("Error parsing duration:", duration, error);
+    return 0;
+  }
 }
 
 /**
@@ -228,7 +262,7 @@ function getTotalPages(playlistData: MultiPlaylistData): number {
 }
 
 /**
- * Updates the video grid for a specific playlist
+ * Updates the video grid for a specific playlist (with empty results handling)
  */
 function updateVideoGrid(playlistId: string): void {
   const videoGrid = document.querySelector(
@@ -238,6 +272,26 @@ function updateVideoGrid(playlistId: string): void {
 
   const playlistData = playlistsData.find((p) => p.id === playlistId);
   if (!playlistData) return;
+
+  // Handle empty results (no videos after filtering)
+  if (playlistData.videos.length === 0) {
+    videoGrid.innerHTML = `
+      <div style="
+        padding: 20px;
+        text-align: center;
+        color: #666;
+        font-size: 14px;
+        width: 100%;
+      ">
+        <p style="margin: 0 0 8px 0;">No videos match your current filters</p>
+        <p style="margin: 0; font-size: 12px;">Try adjusting your filter settings in the extension popup</p>
+      </div>
+    `;
+    
+    // Hide pagination arrows for empty results
+    updateArrowVisibility(playlistId);
+    return;
+  }
 
   const currentVideos = getCurrentPageVideos(playlistData);
 
@@ -426,11 +480,9 @@ async function getSelectedPlaylists(): Promise<string[]> {
 }
 
 /**
- * Fetches multiple playlists data from YouTube API
+ * Fetches multiple playlists data from YouTube API and applies filters/sorting
  */
-async function fetchMultiplePlaylistsData(): Promise<
-  MultiPlaylistData[] | null
-> {
+async function fetchMultiplePlaylistsData(): Promise<MultiPlaylistData[] | null> {
   try {
     // Get auth token from background script
     const authToken = await getAuthToken();
@@ -451,10 +503,7 @@ async function fetchMultiplePlaylistsData(): Promise<
 
     // Get user's playlists info (only if we need non-LIKED_VIDEOS playlists)
     const regularPlaylistIds = selectedPlaylistIds.filter((id) => id !== "LL");
-    const allPlaylists =
-      regularPlaylistIds.length > 0
-        ? await apiService.getUserPlaylists(25)
-        : [];
+    const allPlaylists = regularPlaylistIds.length > 0 ? await apiService.getUserPlaylists(25) : [];
 
     // Create minimal playlist info for the playlists we need to fetch
     const selectedPlaylists = selectedPlaylistIds
@@ -484,8 +533,6 @@ async function fetchMultiplePlaylistsData(): Promise<
 
     for (const playlist of selectedPlaylists) {
       console.log(`Fetching videos from playlist: "${playlist.title}"`);
-      console.log(`Playlist ID: ${playlist.id}`);
-      console.log(`Is Liked Video? ${playlist.id === "LIKED_VIDEOS"}`);
 
       try {
         let videos: Video[];
@@ -493,40 +540,65 @@ async function fetchMultiplePlaylistsData(): Promise<
         if (playlist.id === "LIKED_VIDEOS") {
           console.log("🔍 Calling getLikedVideosPlaylist...");
           videos = await apiService.getLikedVideosPlaylist(50);
-          console.log(
-            `🔍 getLikedVideosPlaylist returned: ${videos.length} videos`
-          );
         } else {
           console.log("🔍 Calling getCompletePlaylistData...");
           videos = await apiService.getCompletePlaylistData(playlist.id, 50);
-          console.log(
-            `🔍 getCompletePlaylistData returned: ${videos.length} videos`
-          );
         }
 
         if (videos.length > 0) {
-          playlistsWithVideos.push({
-            id: playlist.id,
-            title: playlist.title,
-            videos: videos,
-            paginationState: {
-              currentPage: 0,
-              videosPerPage: calculateVideosPerPage(),
-              totalVideos: videos.length,
-              allVideos: videos,
-            },
-          });
-          console.log(
-            `Successfully fetched ${videos.length} videos from "${playlist.title}"`
-          );
+          // Get filter/sort settings for this playlist (handle LL vs LIKED_VIDEOS)
+          const settingsKey = playlist.id === "LIKED_VIDEOS" ? "LL" : playlist.id;
+          const playlistSettings = await getPlaylistSettings(settingsKey);
+          
+          let processedVideos = videos;
+          
+          if (playlistSettings) {
+            console.log(`📊 Applying custom filters/sorting to "${playlist.title}"`);
+            
+            // Apply filters first
+            processedVideos = applyFilters(videos, playlistSettings.filters);
+            console.log(`🔍 Filtered ${videos.length} → ${processedVideos.length} videos`);
+            
+            // Apply sorting
+            processedVideos = applySorting(processedVideos, playlistSettings.sort);
+            console.log(`🔄 Sorted by: ${playlistSettings.sort.by} (${playlistSettings.sort.direction})`);
+          } else {
+            console.log(`📊 Using default order for "${playlist.title}"`);
+          }
+
+          if (processedVideos.length > 0) {
+            playlistsWithVideos.push({
+              id: playlist.id,
+              title: playlist.title,
+              videos: processedVideos,
+              paginationState: {
+                currentPage: 0,
+                videosPerPage: calculateVideosPerPage(),
+                totalVideos: processedVideos.length,
+                allVideos: processedVideos,
+              },
+            });
+            console.log(`✅ Successfully processed ${processedVideos.length} videos from "${playlist.title}"`);
+          } else {
+            // Create placeholder for empty filtered results
+            playlistsWithVideos.push({
+              id: playlist.id,
+              title: playlist.title,
+              videos: [],
+              paginationState: {
+                currentPage: 0,
+                videosPerPage: calculateVideosPerPage(),
+                totalVideos: 0,
+                allVideos: [],
+              },
+            });
+            console.log(`⚠️ No videos match filters for "${playlist.title}"`);
+          }
         } else {
           console.warn(`No videos found in playlist: "${playlist.title}"`);
         }
       } catch (error) {
-        console.error(
-          `Failed to fetch videos for playlist "${playlist.title}":`,
-          error
-        );
+        console.error(`Failed to fetch videos for playlist "${playlist.title}":`, error);
       }
     }
 
@@ -661,6 +733,163 @@ function detectShortsAfterFirstRow(contentContainer: HTMLElement, videosPerRow: 
   
   console.log("🔍 No Shorts section detected after first row");
   return null;
+}
+
+/**
+ * Apply filters to video array
+ */
+function applyFilters(videos: Video[], filters: PlaylistFilterSortSettings['filters']): Video[] {
+  return videos.filter(video => {
+    try {
+      console.log(`🔍 Checking video: "${video.snippet.title}" - Views: ${video.viewCount}, Min: ${filters.viewCount.min}, Max: ${filters.viewCount.max}`);
+      // Keywords filter (title + channel)
+      if (filters.keywords.trim()) {
+        const searchText = `${video.snippet.title} ${video.snippet.videoOwnerChannelTitle}`.toLowerCase();
+        const keywords = filters.keywords.toLowerCase();
+        if (!searchText.includes(keywords)) {
+          return false;
+        }
+      }
+      
+      // View count filter
+      const viewCount = video.viewCount || 0;
+      if (viewCount < filters.viewCount.min) {
+        return false;
+      }
+      if (filters.viewCount.max !== null && viewCount > filters.viewCount.max) {
+        return false;
+      }
+      
+      // Duration filter
+      const durationSeconds = parseDurationToSeconds(video.duration);
+      if (durationSeconds < filters.duration.min) {
+        return false;
+      }
+      if (filters.duration.max !== null && durationSeconds > filters.duration.max) {
+        return false;
+      }
+      
+      // Upload date filter
+      if (filters.uploadDate !== 'all') {
+        const uploadDate = new Date(video.snippet.publishedAt);
+        const now = new Date();
+        const daysDiff = Math.floor((now.getTime() - uploadDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        switch (filters.uploadDate) {
+          case 'week':
+            if (daysDiff > 7) return false;
+            break;
+          case 'month':
+            if (daysDiff > 30) return false;
+            break;
+          case 'year':
+            if (daysDiff > 365) return false;
+            break;
+        }
+      }
+      
+      // Channel filter (if implemented later)
+      if (filters.channels.length > 0) {
+        if (!filters.channels.includes(video.snippet.videoOwnerChannelTitle)) {
+          return false;
+        }
+      }
+      
+      // Category filter (if implemented later)
+      if (filters.categories.length > 0) {
+        if (!filters.categories.includes(video.snippet.categoryName)) {
+          return false;
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.warn("Error filtering video:", video, error);
+      return true; // Include video if filtering fails
+    }
+  });
+}
+
+/**
+ * Apply sorting to video array
+ */
+function applySorting(videos: Video[], sort: PlaylistFilterSortSettings['sort']): Video[] {
+  if (sort.by === 'default') {
+    return videos; // Keep original order
+  }
+  
+  if (sort.by === 'random') {
+    // Generate new random order each time
+    const shuffled = [...videos];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }
+  
+  const sortedVideos = [...videos].sort((a, b) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let aValue: any, bValue: any;
+    
+    switch (sort.by) {
+      case 'views':
+        aValue = a.viewCount || 0;
+        bValue = b.viewCount || 0;
+        break;
+        
+      case 'date':
+        aValue = new Date(a.snippet.publishedAt).getTime();
+        bValue = new Date(b.snippet.publishedAt).getTime();
+        break;
+        
+      case 'duration':
+        aValue = parseDurationToSeconds(a.duration);
+        bValue = parseDurationToSeconds(b.duration);
+        break;
+        
+      case 'title':
+        aValue = a.snippet.title.toLowerCase();
+        bValue = b.snippet.title.toLowerCase();
+        break;
+        
+      case 'channel':
+        aValue = a.snippet.videoOwnerChannelTitle.toLowerCase();
+        bValue = b.snippet.videoOwnerChannelTitle.toLowerCase();
+        break;
+        
+      default:
+        return 0;
+    }
+    
+    // Handle string vs number comparison
+    let comparison = 0;
+    if (typeof aValue === 'string') {
+      comparison = aValue.localeCompare(bValue);
+    } else {
+      comparison = aValue - bValue;
+    }
+    
+    // Apply sort direction
+    return sort.direction === 'asc' ? comparison : -comparison;
+  });
+  
+  return sortedVideos;
+}
+
+/**
+ * Get filter/sort settings for a specific playlist
+ */
+async function getPlaylistSettings(playlistId: string): Promise<PlaylistFilterSortSettings | null> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(["selectedPlaylists"], (result) => {
+      if (result.selectedPlaylists?.playlistSettings?.[playlistId]) {
+        resolve(result.selectedPlaylists.playlistSettings[playlistId]);
+      } else {
+        resolve(null); // No custom settings, use defaults
+      }
+    });
+  });
 }
 
 /**
@@ -1049,3 +1278,4 @@ console.log("✅ Content script message listener registered");
 
 // Wait a bit longer for YouTube's SPA to load, then try injection
 setTimeout(injectPlaylistsWithObserver, 1000);
+}
