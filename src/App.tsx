@@ -1,5 +1,23 @@
 import { useState, useEffect } from "react";
 
+const YOUTUBE_CATEGORIES = [
+  "Film & Animation",
+  "Autos & Vehicles", 
+  "Music",
+  "Pets & Animals",
+  "Sports",
+  "Travel & Events",
+  "Gaming",
+  "People & Blogs",
+  "Comedy",
+  "Entertainment",
+  "News & Politics",
+  "Howto & Style",
+  "Education",
+  "Science & Technology",
+  "Nonprofits & Activism"
+];
+
 interface PlaylistInfo {
   id: string;
   title: string;
@@ -11,15 +29,17 @@ interface PlaylistInfo {
 
 interface PlaylistFilterSortSettings {
   filters: {
-    viewCount: { min: number; max: number | null };
+    viewCount: { min: number | null; max: number | null };
+    likeCount: { min: number | null; max: number | null };     // NEW
+    commentCount: { min: number | null; max: number | null };  // NEW
     uploadDate: 'all' | 'week' | 'month' | 'year';
-    duration: { min: number; max: number | null }; // in seconds
+    duration: { min: number | null; max: number | null };
     channels: string[];
-    categories: string[];
+    categories: string[];  // NEW
     keywords: string;
   };
   sort: {
-    by: 'default' | 'views' | 'date' | 'duration' | 'title' | 'channel' | 'random';
+    by: 'default' | 'views' | 'likes' | 'comments' | 'date' | 'duration' | 'title' | 'channel' | 'random';
     direction: 'asc' | 'desc';
   };
 }
@@ -29,6 +49,167 @@ interface SelectedPlaylistSettings {
   maxPlaylists: number;
   playlistSettings: Record<string, PlaylistFilterSortSettings>; // Per-playlist settings
 }
+
+const CategoryDropdown = ({ 
+  selectedCategories, 
+  onCategoryChange 
+}: { 
+  selectedCategories: string[], 
+  onCategoryChange: (categories: string[]) => void 
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const toggleCategory = (category: string) => {
+    if (selectedCategories.includes(category)) {
+      onCategoryChange(selectedCategories.filter(c => c !== category));
+    } else {
+      onCategoryChange([...selectedCategories, category]);
+    }
+  };
+  
+  return (
+    <div style={{ position: 'relative' }}>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: "4px",
+          border: "1px solid #ccc",
+          borderRadius: "3px",
+          fontSize: "11px",
+          cursor: "pointer",
+          backgroundColor: "#3B3B3B",
+          color: "white",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
+        }}
+      >
+        <span>
+          {selectedCategories.length === 0 
+            ? "All categories" 
+            : `${selectedCategories.length} selected`}
+        </span>
+        <span>{isOpen ? "▲" : "▼"}</span>
+      </div>
+      
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            backgroundColor: "#3B3B3B",
+            color: "white",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            maxHeight: "150px",
+            overflowY: "auto",
+            zIndex: 1000,
+            fontSize: "10px"
+          }}
+        >
+          {YOUTUBE_CATEGORIES.map(category => (
+            <label
+              key={category}
+              style={{
+                display: "block",
+                padding: "4px 6px",
+                cursor: "pointer",
+                borderBottom: "1px solid #eee"
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selectedCategories.includes(category)}
+                onChange={() => toggleCategory(category)}
+                style={{ marginRight: "6px", fontSize: "10px" }}
+              />
+              {category}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const UploadDateDropdown = ({ 
+  selectedDate, 
+  onDateChange 
+}: { 
+  selectedDate: string, 
+  onDateChange: (date: string) => void 
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const dateOptions = [
+    { value: 'all', label: 'All time' },
+    { value: 'week', label: 'Last week' },
+    { value: 'month', label: 'Last month' },
+    { value: 'year', label: 'Last year' }
+  ];
+  
+  const selectedLabel = dateOptions.find(opt => opt.value === selectedDate)?.label || 'All time';
+  
+  return (
+    <div style={{ position: 'relative' }}>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: "4px",
+          border: "1px solid #ccc",
+          borderRadius: "3px",
+          fontSize: "11px",
+          cursor: "pointer",
+          backgroundColor: "#3B3B3B",
+          color: "white",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center"
+        }}
+      >
+        <span>{selectedLabel}</span>
+        <span style={{ color: "white" }}>{isOpen ? "▲" : "▼"}</span>
+      </div>
+      
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            backgroundColor: "#3B3B3B",
+            color: "white",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            zIndex: 1000,
+            fontSize: "11px"
+          }}
+        >
+          {dateOptions.map(option => (
+            <div
+              key={option.value}
+              onClick={() => {
+                onDateChange(option.value);
+                setIsOpen(false);
+              }}
+              style={{
+                padding: "4px 6px",
+                cursor: "pointer",
+                borderBottom: "1px solid #eee",
+                color: "white"
+              }}
+            >
+              {option.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 function App() {
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -306,11 +487,13 @@ const clearAllSelections = () => {
 // Get default filter/sort settings
 const getDefaultSettings = (): PlaylistFilterSortSettings => ({
   filters: {
-    viewCount: { min: 0, max: null },
+    viewCount: { min: null, max: null },
+    likeCount: { min: null, max: null },
+    commentCount: { min: null, max: null },
     uploadDate: 'all',
-    duration: { min: 0, max: null },
+    duration: { min: null, max: null },
     channels: [],
-    categories: [],
+    categories: [],  // NEW
     keywords: ''
   },
   sort: {
@@ -395,25 +578,38 @@ const resetPlaylistSettings = (playlistId: string) => {
   });
 };
 
-// Get settings for a specific playlist (or defaults)
+// Get settings for a specific playlist (or defaults) - with proper merging
 const getPlaylistSettings = (playlistId: string): PlaylistFilterSortSettings => {
-  return playlistSettings[playlistId] || getDefaultSettings();
+  const storedSettings = playlistSettings[playlistId];
+  const defaults = getDefaultSettings();
+  
+  if (!storedSettings) {
+    return defaults;
+  }
+  
+  // Deep merge stored settings with defaults to handle missing properties
+  return {
+    filters: {
+      viewCount: storedSettings.filters?.viewCount || defaults.filters.viewCount,
+      likeCount: storedSettings.filters?.likeCount || defaults.filters.likeCount,
+      commentCount: storedSettings.filters?.commentCount || defaults.filters.commentCount,
+      uploadDate: storedSettings.filters?.uploadDate || defaults.filters.uploadDate,
+      duration: storedSettings.filters?.duration || defaults.filters.duration,
+      channels: storedSettings.filters?.channels || defaults.filters.channels,
+      categories: storedSettings.filters?.categories || defaults.filters.categories,
+      keywords: storedSettings.filters?.keywords || defaults.filters.keywords
+    },
+    sort: {
+      by: storedSettings.sort?.by || defaults.sort.by,
+      direction: storedSettings.sort?.direction || defaults.sort.direction
+    }
+  };
 };
 
 // Check if playlist has custom settings
 const hasCustomSettings = (playlistId: string): boolean => {
   return playlistId in playlistSettings;
 };
-
-// Format duration for display
-// const formatDurationDisplay = (seconds: number): string => {
-//   const hours = Math.floor(seconds / 3600);
-//   const minutes = Math.floor((seconds % 3600) / 60);
-//   if (hours > 0) {
-//     return `${hours}h ${minutes}m`;
-//   }
-//   return `${minutes}m`;
-// };
 
   return (
     <div className="App" style={{ width: "400px", padding: "16px" }}>
@@ -555,188 +751,296 @@ const hasCustomSettings = (playlistId: string): boolean => {
                   }}
                 >
                   {/* Filters */}
-                  <div style={{ marginBottom: "12px" }}>
-                    <h5 style={{ margin: "0 0 6px 0", fontSize: "12px" }}>Filters</h5>
-                    
-                    {/* Keywords */}
-                    <div style={{ marginBottom: "8px" }}>
-                      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
-                        Keywords:
-                      </label>
-                      <input
-                        type="text"
-                        value={settings.filters.keywords}
-                        onChange={(e) => updatePlaylistSetting(playlist.id, ['filters', 'keywords'], e.target.value)}
-                        placeholder="Search in titles..."
-                        style={{
-                          width: "100%",
-                          padding: "4px",
-                          border: "1px solid #ccc",
-                          borderRadius: "3px",
-                          fontSize: "11px"
-                        }}
-                      />
-                    </div>
-                    
-                    {/* Upload Date */}
-                    <div style={{ marginBottom: "8px" }}>
-                      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
-                        Upload date:
-                      </label>
-                      <select
-                        value={settings.filters.uploadDate}
-                        onChange={(e) => updatePlaylistSetting(playlist.id, ['filters', 'uploadDate'], e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "4px",
-                          border: "1px solid #ccc",
-                          borderRadius: "3px",
-                          fontSize: "11px"
-                        }}
-                      >
-                        <option value="all">All time</option>
-                        <option value="week">Last week</option>
-                        <option value="month">Last month</option>
-                        <option value="year">Last year</option>
-                      </select>
-                    </div>
-                    
-                    {/* View Count */}
-                    <div style={{ marginBottom: "8px" }}>
-                      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
-                        View count:
-                      </label>
-                      <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                        <input
-                          type="number"
-                          value={settings.filters.viewCount.min}
-                          onChange={(e) => updatePlaylistSetting(
-                            playlist.id, 
-                            ['filters', 'viewCount', 'min'], 
-                            parseInt(e.target.value) || 0
-                          )}
-                          placeholder="Min"
-                          style={{
-                            flex: 1,
-                            padding: "4px",
-                            border: "1px solid #ccc",
-                            borderRadius: "3px",
-                            fontSize: "11px"
-                          }}
-                        />
-                        <span style={{ fontSize: "10px" }}>to</span>
-                        <input
-                          type="number"
-                          value={settings.filters.viewCount.max || ''}
-                          onChange={(e) => updatePlaylistSetting(
-                            playlist.id, 
-                            ['filters', 'viewCount', 'max'], 
-                            e.target.value ? parseInt(e.target.value) : null
-                          )}
-                          placeholder="Max"
-                          style={{
-                            flex: 1,
-                            padding: "4px",
-                            border: "1px solid #ccc",
-                            borderRadius: "3px",
-                            fontSize: "11px"
-                          }}
-                        />
-                      </div>
-                    </div>
-                    
-                    {/* Duration */}
-                    <div style={{ marginBottom: "8px" }}>
-                      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
-                        Duration (minutes):
-                      </label>
-                      <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                        <input
-                          type="number"
-                          value={Math.floor(settings.filters.duration.min / 60)}
-                          onChange={(e) => updatePlaylistSetting(
-                            playlist.id, 
-                            ['filters', 'duration', 'min'], 
-                            (parseInt(e.target.value) || 0) * 60
-                          )}
-                          placeholder="Min"
-                          style={{
-                            flex: 1,
-                            padding: "4px",
-                            border: "1px solid #ccc",
-                            borderRadius: "3px",
-                            fontSize: "11px"
-                          }}
-                        />
-                        <span style={{ fontSize: "10px" }}>to</span>
-                        <input
-                          type="number"
-                          value={settings.filters.duration.max ? Math.floor(settings.filters.duration.max / 60) : ''}
-                          onChange={(e) => updatePlaylistSetting(
-                            playlist.id, 
-                            ['filters', 'duration', 'max'], 
-                            e.target.value ? parseInt(e.target.value) * 60 : null
-                          )}
-                          placeholder="Max"
-                          style={{
-                            flex: 1,
-                            padding: "4px",
-                            border: "1px solid #ccc",
-                            borderRadius: "3px",
-                            fontSize: "11px"
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
+<div style={{ marginBottom: "12px" }}>
+  <h5 style={{ margin: "0 0 6px 0", fontSize: "12px" }}>Filters</h5>
+  
+  {/* Keywords */}
+  <div style={{ marginBottom: "8px" }}>
+    <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
+      Keywords:
+    </label>
+    <input
+      type="text"
+      value={settings.filters.keywords}
+      onChange={(e) => updatePlaylistSetting(playlist.id, ['filters', 'keywords'], e.target.value)}
+      placeholder="Search in titles..."
+      style={{
+        width: "100%",
+        padding: "4px",
+        border: "1px solid #ccc",
+        borderRadius: "3px",
+        fontSize: "11px"
+      }}
+    />
+  </div>
+  
+  {/* Upload Date & Category Row */}
+  <div style={{ display: "flex", gap: "4px", marginBottom: "8px" }}>
+    <div style={{ flex: 1 }}>
+      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
+        Upload date:
+      </label>
+      <UploadDateDropdown
+  selectedDate={settings.filters.uploadDate}
+  onDateChange={(date) => updatePlaylistSetting(playlist.id, ['filters', 'uploadDate'], date)}
+/>
+    </div>
+    
+    <div style={{ flex: 1 }}>
+      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
+        Category:
+      </label>
+      <CategoryDropdown
+        selectedCategories={settings.filters.categories}
+        onCategoryChange={(categories) => updatePlaylistSetting(playlist.id, ['filters', 'categories'], categories)}
+      />
+    </div>
+  </div>
+  
+  {/* View Count & Like Count Row */}
+  <div style={{ display: "flex", gap: "6px", marginBottom: "8px" }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
+        View count:
+      </label>
+      <div style={{ display: "flex", gap: "2px", alignItems: "center" }}>
+        <input
+          type="number"
+          value={settings.filters.viewCount.min || ''}
+          onChange={(e) => updatePlaylistSetting(
+            playlist.id, 
+            ['filters', 'viewCount', 'min'], 
+            e.target.value === '' ? null : (parseInt(e.target.value) || null)
+          )}
+          placeholder="Min"
+          style={{
+            width: "100%",
+            minWidth: "0",
+            padding: "3px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "10px",
+            boxSizing: "border-box"
+          }}
+        />
+        <span style={{ fontSize: "9px", flexShrink: 0 }}>to</span>
+        <input
+          type="number"
+          value={settings.filters.viewCount.max || ''}
+          onChange={(e) => updatePlaylistSetting(
+            playlist.id, 
+            ['filters', 'viewCount', 'max'], 
+            e.target.value ? parseInt(e.target.value) : null
+          )}
+          placeholder="Max"
+          style={{
+            width: "100%",
+            minWidth: "0",
+            padding: "3px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "10px",
+            boxSizing: "border-box"
+          }}
+        />
+      </div>
+    </div>
+    
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
+        Like count:
+      </label>
+      <div style={{ display: "flex", gap: "2px", alignItems: "center" }}>
+        <input
+          type="number"
+          value={settings.filters.likeCount.min || ''}
+          onChange={(e) => updatePlaylistSetting(
+            playlist.id, 
+            ['filters', 'likeCount', 'min'], 
+            parseInt(e.target.value) || 0
+          )}
+          placeholder="Min"
+          style={{
+            width: "100%",
+            minWidth: "0",
+            padding: "3px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "10px",
+            boxSizing: "border-box"
+          }}
+        />
+        <span style={{ fontSize: "9px", flexShrink: 0 }}>to</span>
+        <input
+          type="number"
+          value={settings.filters.likeCount.max || ''}
+          onChange={(e) => updatePlaylistSetting(
+            playlist.id, 
+            ['filters', 'likeCount', 'max'], 
+            e.target.value ? parseInt(e.target.value) : null
+          )}
+          placeholder="Max"
+          style={{
+            width: "100%",
+            minWidth: "0",
+            padding: "3px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "10px",
+            boxSizing: "border-box"
+          }}
+        />
+      </div>
+    </div>
+  </div>
+  
+  {/* Duration & Comment Count Row */}
+  <div style={{ display: "flex", gap: "6px", marginBottom: "8px" }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
+        Duration (min):
+      </label>
+      <div style={{ display: "flex", gap: "2px", alignItems: "center" }}>
+        <input
+          type="number"
+          value={settings.filters.duration.min ? Math.floor(settings.filters.duration.min / 60) : ''}
+          onChange={(e) => updatePlaylistSetting(
+            playlist.id, 
+            ['filters', 'duration', 'min'], 
+            (parseInt(e.target.value) || 0) * 60
+          )}
+          placeholder="Min"
+          style={{
+            width: "100%",
+            minWidth: "0",
+            padding: "3px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "10px",
+            boxSizing: "border-box"
+          }}
+        />
+        <span style={{ fontSize: "9px", flexShrink: 0 }}>to</span>
+        <input
+          type="number"
+          value={settings.filters.duration.max ? Math.floor(settings.filters.duration.max / 60) : ''}
+          onChange={(e) => updatePlaylistSetting(
+            playlist.id, 
+            ['filters', 'duration', 'max'], 
+            e.target.value ? parseInt(e.target.value) * 60 : null
+          )}
+          placeholder="Max"
+          style={{
+            width: "100%",
+            minWidth: "0",
+            padding: "3px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "10px",
+            boxSizing: "border-box"
+          }}
+        />
+      </div>
+    </div>
+    
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <label style={{ display: "block", fontSize: "11px", marginBottom: "2px" }}>
+        Comments:
+      </label>
+      <div style={{ display: "flex", gap: "2px", alignItems: "center" }}>
+        <input
+          type="number"
+          value={settings.filters.commentCount.min || ''}
+          onChange={(e) => updatePlaylistSetting(
+            playlist.id, 
+            ['filters', 'commentCount', 'min'], 
+            parseInt(e.target.value) || 0
+          )}
+          placeholder="Min"
+          style={{
+            width: "100%",
+            minWidth: "0",
+            padding: "3px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "10px",
+            boxSizing: "border-box"
+          }}
+        />
+        <span style={{ fontSize: "9px", flexShrink: 0 }}>to</span>
+        <input
+          type="number"
+          value={settings.filters.commentCount.max || ''}
+          onChange={(e) => updatePlaylistSetting(
+            playlist.id, 
+            ['filters', 'commentCount', 'max'], 
+            e.target.value ? parseInt(e.target.value) : null
+          )}
+          placeholder="Max"
+          style={{
+            width: "100%",
+            minWidth: "0",
+            padding: "3px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "10px",
+            boxSizing: "border-box"
+          }}
+        />
+      </div>
+    </div>
+  </div>
+</div>
                   
                   {/* Sort */}
-                  <div style={{ marginBottom: "12px" }}>
-                    <h5 style={{ margin: "0 0 6px 0", fontSize: "12px" }}>Sort</h5>
-                    
-                    <div style={{ display: "flex", gap: "4px" }}>
-                      <div style={{ flex: 2 }}>
-                        <select
-                          value={settings.sort.by}
-                          onChange={(e) => updatePlaylistSetting(playlist.id, ['sort', 'by'], e.target.value)}
-                          style={{
-                            width: "100%",
-                            padding: "4px",
-                            border: "1px solid #ccc",
-                            borderRadius: "3px",
-                            fontSize: "11px"
-                          }}
-                        >
-                          <option value="default">Original order</option>
-                          <option value="views">View count</option>
-                          <option value="date">Upload date</option>
-                          <option value="duration">Duration</option>
-                          <option value="title">Title (A-Z)</option>
-                          <option value="channel">Channel name</option>
-                          <option value="random">Random</option>
-                        </select>
-                      </div>
-                      
-                      {settings.sort.by !== 'default' && settings.sort.by !== 'random' && (
-                        <div style={{ flex: 1 }}>
-                          <select
-                            value={settings.sort.direction}
-                            onChange={(e) => updatePlaylistSetting(playlist.id, ['sort', 'direction'], e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "4px",
-                              border: "1px solid #ccc",
-                              borderRadius: "3px",
-                              fontSize: "11px"
-                            }}
-                          >
-                            <option value="desc">↓ High-Low</option>
-                            <option value="asc">↑ Low-High</option>
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+<div style={{ marginBottom: "12px" }}>
+  <h5 style={{ margin: "0 0 6px 0", fontSize: "12px" }}>Sort</h5>
+  
+  <div style={{ display: "flex", gap: "4px" }}>
+    <div style={{ flex: 2 }}>
+      <select
+        value={settings.sort.by}
+        onChange={(e) => updatePlaylistSetting(playlist.id, ['sort', 'by'], e.target.value)}
+        style={{
+          width: "100%",
+          padding: "4px",
+          border: "1px solid #ccc",
+          borderRadius: "3px",
+          fontSize: "11px"
+        }}
+      >
+        <option value="default">Original order</option>
+        <option value="views">View count</option>
+        <option value="likes">Like count</option>
+        <option value="comments">Comment count</option>
+        <option value="date">Upload date</option>
+        <option value="duration">Duration</option>
+        <option value="title">Title (A-Z)</option>
+        <option value="channel">Channel name</option>
+        <option value="random">Random</option>
+      </select>
+    </div>
+    
+    {settings.sort.by !== 'default' && settings.sort.by !== 'random' && (
+      <div style={{ flex: 1 }}>
+        <select
+          value={settings.sort.direction}
+          onChange={(e) => updatePlaylistSetting(playlist.id, ['sort', 'direction'], e.target.value)}
+          style={{
+            width: "100%",
+            padding: "4px",
+            border: "1px solid #ccc",
+            borderRadius: "3px",
+            fontSize: "11px"
+          }}
+        >
+          <option value="desc">↓ High-Low</option>
+          <option value="asc">↑ Low-High</option>
+        </select>
+      </div>
+    )}
+  </div>
+</div>
                   
                   {/* Reset Button */}
                   <button
@@ -764,35 +1068,40 @@ const hasCustomSettings = (playlistId: string): boolean => {
       </div>
 
       <div style={{ marginTop: "12px", display: "flex", gap: "8px" }}>
-        <button
-          onClick={savePlaylistSelection}
-          disabled={selectedPlaylistIds.length === 0}
-          style={{
-            padding: "8px 16px",
-            backgroundColor: selectedPlaylistIds.length > 0 ? "#1976d2" : "#ccc",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: selectedPlaylistIds.length > 0 ? "pointer" : "not-allowed",
-          }}
-        >
-          Save Selection ({selectedPlaylistIds.length})
-        </button>
+  <button
+    onClick={savePlaylistSelection}
+    disabled={false}
+    style={{
+      padding: "8px 16px",
+      backgroundColor: selectedPlaylistIds.length > 0 ? "#1976d2" : "#ff9800",
+      color: "white",
+      border: "none",
+      borderRadius: "4px",
+      cursor: "pointer",
+    }}
+  >
+    {selectedPlaylistIds.length > 0 
+      ? `Save Selection (${selectedPlaylistIds.length})` 
+      : "Clear YouTube Homepage"
+    }
+  </button>
 
-        <button
-          onClick={clearAllSelections}
-          style={{
-            padding: "8px 16px",
-            backgroundColor: "#f44336",
-            color: "white",
-            border: "none",
-            borderRadius: "4px",
-            cursor: "pointer",
-          }}
-        >
-          Clear All
-        </button>
-      </div>
+  {selectedPlaylistIds.length > 0 && (
+    <button
+      onClick={clearAllSelections}
+      style={{
+        padding: "8px 16px",
+        backgroundColor: "#f44336",
+        color: "white",
+        border: "none",
+        borderRadius: "4px",
+        cursor: "pointer",
+      }}
+    >
+      Clear All
+    </button>
+  )}
+</div>
 
       {/* Current Selection Summary */}
       {selectedPlaylistIds.length > 0 && (
@@ -804,19 +1113,6 @@ const hasCustomSettings = (playlistId: string): boolean => {
             borderRadius: "4px",
           }}
         >
-          <strong>Selected ({selectedPlaylistIds.length}/3):</strong>
-          <ul style={{ margin: "4px 0", paddingLeft: "16px" }}>
-            {selectedPlaylistIds.map((id) => {
-              const playlist = playlists.find((p) => p.id === id);
-              const hasCustom = hasCustomSettings(id);
-              return playlist ? (
-                <li key={id} style={{ fontSize: "12px" }}>
-                  {playlist.title}
-                  {hasCustom && <span style={{ color: "#1976d2", fontWeight: "bold" }}> (Filtered)</span>}
-                </li>
-              ) : null;
-            })}
-          </ul>
         </div>
       )}
 

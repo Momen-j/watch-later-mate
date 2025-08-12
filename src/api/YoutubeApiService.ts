@@ -45,10 +45,12 @@ interface YoutubeVideoDetails {
   };
   statistics: {
     viewCount: string;
+    likeCount: string;      
+    commentCount: string;   
   };
 }
 
-// vidoe interface with some extra metadata to help with filtering
+// Updated Video interface with new fields
 interface Video {
   contentDetails: {
     videoId: string;
@@ -58,7 +60,7 @@ interface Video {
     videoOwnerChannelTitle: string;
     publishedAt: string;
     categoryId: string;
-    categoryName: string; // Human-readable category name
+    categoryName: string;
     thumbnails: {
       high: {
         url: string;
@@ -67,6 +69,8 @@ interface Video {
   };
   duration: string;
   viewCount: number;
+  likeCount: number;        
+  commentCount: number;     
 }
 
 class YoutubeApiService {
@@ -341,58 +345,57 @@ class YoutubeApiService {
    * Transforms YouTube API data into video interface
    */
   private async transformToVideoInterface(
-    playlistItems: YoutubePlaylistItem[],
-    videoDetails: YoutubeVideoDetails[]
-  ): Promise<Video[]> {
-    // map for quick video detail lookups
-    const videoDetailsMap = new Map(
-      videoDetails.map((video) => [video.id, video])
-    );
+  playlistItems: YoutubePlaylistItem[],
+  videoDetails: YoutubeVideoDetails[]
+): Promise<Video[]> {
+  // map for quick video detail lookups
+  const videoDetailsMap = new Map(
+    videoDetails.map((video) => [video.id, video])
+  );
 
-    const transformedVideos: (Video | null)[] = await Promise.all(
-      playlistItems.map(async (item) => {
-        const videoId = item.snippet.resourceId.videoId;
-        const details = videoDetailsMap.get(videoId);
+  const transformedVideos: (Video | null)[] = await Promise.all(
+    playlistItems.map(async (item) => {
+      const videoId = item.snippet.resourceId.videoId;
+      const details = videoDetailsMap.get(videoId);
 
-        // skip video where details couldn't be retrieved (might be privated/deleted)
-        if (!details) {
-          console.warn(`No details found for video ${videoId}, skipping`);
-          return null;
-        }
+      // skip video where details couldn't be retrieved (might be privated/deleted)
+      if (!details) {
+        console.warn(`No details found for video ${videoId}, skipping`);
+        return null;
+      }
 
-        // get category name
-        const categoryName = await this.getCategoryName(
-          details.snippet.categoryId
-        );
+      // get category name
+      const categoryName = await this.getCategoryName(
+        details.snippet.categoryId
+      );
 
-        return {
-          contentDetails: {
-            videoId: videoId,
-          },
-          snippet: {
-            title: details.snippet.title,
-            videoOwnerChannelTitle: details.snippet.channelTitle,
-            publishedAt: details.snippet.publishedAt,
-            categoryId: details.snippet.categoryId,
-            categoryName: categoryName,
-            thumbnails: {
-              high: {
-                url:
-                  details.snippet.thumbnails?.high
-                    ?.url /*|| details.snippet.thumbnails?.default?.url*/ || "",
-              },
+      return {
+        contentDetails: {
+          videoId: videoId,
+        },
+        snippet: {
+          title: details.snippet.title,
+          videoOwnerChannelTitle: details.snippet.channelTitle,
+          publishedAt: details.snippet.publishedAt,
+          categoryId: details.snippet.categoryId,
+          categoryName: categoryName,
+          thumbnails: {
+            high: {
+              url:
+                details.snippet.thumbnails?.high?.url || "",
             },
           },
-          duration: details.contentDetails.duration,
-          viewCount: parseInt(details.statistics.viewCount) || 0,
-        };
-      })
-    );
+        },
+        duration: details.contentDetails.duration,
+        viewCount: parseInt(details.statistics.viewCount) || 0,
+        likeCount: parseInt(details.statistics.likeCount) || 0,        // NEW
+        commentCount: parseInt(details.statistics.commentCount) || 0, // NEW
+      };
+    })
+  );
 
-    // look into what this code is doing with the "video is Video => video" part
-    // remove null entries
-    return transformedVideos.filter((video): video is Video => video !== null);
-  }
+  return transformedVideos.filter((video): video is Video => video !== null);
+}
 
   // REVIEW METHOD
   /**
@@ -407,7 +410,7 @@ class YoutubeApiService {
   }
 
   /**
-   * Get the "Watch Later" playlist
+   * Get the "Liked Videos" playlist
    * Has a special playlist ID that's the same across all users
    */
   async getLikedVideosPlaylist(maxResults: number = 50): Promise<Video[]> {

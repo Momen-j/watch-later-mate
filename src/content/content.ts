@@ -45,6 +45,8 @@ interface Video {
   };
   duration: string;
   viewCount: number;
+  likeCount: number;        // NEW
+  commentCount: number;     // NEW
 }
 
 // Multi-playlist pagination state management
@@ -65,17 +67,20 @@ interface MultiPlaylistData {
 interface PlaylistFilterSortSettings {
   filters: {
     viewCount: { min: number; max: number | null };
+    likeCount: { min: number; max: number | null };     // NEW
+    commentCount: { min: number; max: number | null };  // NEW
     uploadDate: 'all' | 'week' | 'month' | 'year';
-    duration: { min: number; max: number | null }; // in seconds
+    duration: { min: number; max: number | null };
     channels: string[];
-    categories: string[];
+    categories: string[];  // Will store category names
     keywords: string;
   };
   sort: {
-    by: 'default' | 'views' | 'date' | 'duration' | 'title' | 'channel' | 'random';
+    by: 'default' | 'views' | 'likes' | 'comments' | 'date' | 'duration' | 'title' | 'channel' | 'random';
     direction: 'asc' | 'desc';
   };
 }
+
 
 // Global state for all playlists
 let playlistsData: MultiPlaylistData[] = [];
@@ -741,7 +746,6 @@ function detectShortsAfterFirstRow(contentContainer: HTMLElement, videosPerRow: 
 function applyFilters(videos: Video[], filters: PlaylistFilterSortSettings['filters']): Video[] {
   return videos.filter(video => {
     try {
-      console.log(`🔍 Checking video: "${video.snippet.title}" - Views: ${video.viewCount}, Min: ${filters.viewCount.min}, Max: ${filters.viewCount.max}`);
       // Keywords filter (title + channel)
       if (filters.keywords.trim()) {
         const searchText = `${video.snippet.title} ${video.snippet.videoOwnerChannelTitle}`.toLowerCase();
@@ -760,6 +764,24 @@ function applyFilters(videos: Video[], filters: PlaylistFilterSortSettings['filt
         return false;
       }
       
+      // Like count filter (NEW)
+      const likeCount = video.likeCount || 0;
+      if (likeCount < filters.likeCount.min) {
+        return false;
+      }
+      if (filters.likeCount.max !== null && likeCount > filters.likeCount.max) {
+        return false;
+      }
+      
+      // Comment count filter (NEW)
+      const commentCount = video.commentCount || 0;
+      if (commentCount < filters.commentCount.min) {
+        return false;
+      }
+      if (filters.commentCount.max !== null && commentCount > filters.commentCount.max) {
+        return false;
+      }
+      
       // Duration filter
       const durationSeconds = parseDurationToSeconds(video.duration);
       if (durationSeconds < filters.duration.min) {
@@ -767,6 +789,13 @@ function applyFilters(videos: Video[], filters: PlaylistFilterSortSettings['filt
       }
       if (filters.duration.max !== null && durationSeconds > filters.duration.max) {
         return false;
+      }
+      
+      // Category filter (NEW)
+      if (filters.categories.length > 0) {
+        if (!filters.categories.includes(video.snippet.categoryName)) {
+          return false;
+        }
       }
       
       // Upload date filter
@@ -791,13 +820,6 @@ function applyFilters(videos: Video[], filters: PlaylistFilterSortSettings['filt
       // Channel filter (if implemented later)
       if (filters.channels.length > 0) {
         if (!filters.channels.includes(video.snippet.videoOwnerChannelTitle)) {
-          return false;
-        }
-      }
-      
-      // Category filter (if implemented later)
-      if (filters.categories.length > 0) {
-        if (!filters.categories.includes(video.snippet.categoryName)) {
           return false;
         }
       }
@@ -836,6 +858,16 @@ function applySorting(videos: Video[], sort: PlaylistFilterSortSettings['sort'])
       case 'views':
         aValue = a.viewCount || 0;
         bValue = b.viewCount || 0;
+        break;
+        
+      case 'likes':  // NEW
+        aValue = a.likeCount || 0;
+        bValue = b.likeCount || 0;
+        break;
+        
+      case 'comments':  // NEW
+        aValue = a.commentCount || 0;
+        bValue = b.commentCount || 0;
         break;
         
       case 'date':
