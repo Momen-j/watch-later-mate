@@ -612,7 +612,7 @@ const hasCustomSettings = (playlistId: string): boolean => {
 };
 
   return (
-    <div className="App" style={{ width: "400px", padding: "16px" }}>
+    <div className="App" style={{ width: "400px", padding: "16px", overflow: "hidden", height: "550px" }}>
       <header className="App-header">
         <h2>Playlist Pal</h2>
 
@@ -641,7 +641,47 @@ const hasCustomSettings = (playlistId: string): boolean => {
 
             {/* Playlist Selection Section */}
 <div style={{ marginBottom: "16px" }}>
-  <h3>Choose Playlists to Display (Max 3)</h3>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+    <h3 style={{ margin: 0 }}>Choose Playlists to Display</h3>
+    
+    <div style={{ display: "flex", gap: "8px" }}>
+      <button
+        onClick={selectedPlaylistIds.length > 0 ? savePlaylistSelection : clearAllSelections}
+        disabled={false}
+        style={{
+          padding: "6px 12px",
+          backgroundColor: selectedPlaylistIds.length > 0 ? "#1976d2" : "#f44336",
+          color: "white",
+          border: "none",
+          borderRadius: "4px",
+          cursor: "pointer",
+          fontSize: "11px"
+        }}
+      >
+      {selectedPlaylistIds.length > 0 
+        ? `Save (${selectedPlaylistIds.length})` 
+        : "Clear All"
+      }
+    </button>
+
+      {selectedPlaylistIds.length > 0 && (
+        <button
+          onClick={clearAllSelections}
+          style={{
+            padding: "6px 12px",
+            backgroundColor: "#f44336",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            fontSize: "11px"
+          }}
+        >
+          Clear All
+        </button>
+      )}
+    </div>
+  </div>
 
   {/* Live Search Bar */}
   <div style={{ marginBottom: "12px" }}>
@@ -655,6 +695,7 @@ const hasCustomSettings = (playlistId: string): boolean => {
         padding: "8px",
         border: "1px solid #ccc",
         borderRadius: "4px",
+        boxSizing: "border-box",
         fontSize: "14px"
       }}
     />
@@ -1067,68 +1108,11 @@ const hasCustomSettings = (playlistId: string): boolean => {
         })}
       </div>
 
-      <div style={{ marginTop: "12px", display: "flex", gap: "8px" }}>
-  <button
-    onClick={savePlaylistSelection}
-    disabled={false}
-    style={{
-      padding: "8px 16px",
-      backgroundColor: selectedPlaylistIds.length > 0 ? "#1976d2" : "#ff9800",
-      color: "white",
-      border: "none",
-      borderRadius: "4px",
-      cursor: "pointer",
-    }}
-  >
-    {selectedPlaylistIds.length > 0 
-      ? `Save Selection (${selectedPlaylistIds.length})` 
-      : "Clear YouTube Homepage"
-    }
-  </button>
-
-  {selectedPlaylistIds.length > 0 && (
-    <button
-      onClick={clearAllSelections}
-      style={{
-        padding: "8px 16px",
-        backgroundColor: "#f44336",
-        color: "white",
-        border: "none",
-        borderRadius: "4px",
-        cursor: "pointer",
-      }}
-    >
-      Clear All
-    </button>
-  )}
-</div>
-
-      {/* Current Selection Summary */}
-      {selectedPlaylistIds.length > 0 && (
-        <div
-          style={{
-            marginTop: "12px",
-            padding: "8px",
-            backgroundColor: "#f5f5f5",
-            borderRadius: "4px",
-          }}
-        >
-        </div>
-      )}
-
       {/* Saved Settings Indicator */}
+      {/* Come back to savedSettings*/}
       {savedSettings && (
-        <div
-          style={{
-            marginTop: "12px",
-            padding: "8px",
-            backgroundColor: "#e8f5e8",
-            borderRadius: "4px",
-            fontSize: "12px",
-          }}
-        >
-          ✅ Settings saved! {savedSettings.playlistIds.length} playlist(s) will appear on YouTube homepage.
-        </div>
+        <>
+        </>
       )}
     </div>
   ) : (
