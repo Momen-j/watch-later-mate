@@ -254,3 +254,12 @@ ytd-rich-section-renderer[data-custom-playlist="true"] {
 .custom-playlist-shelf.last-playlist {
   margin-bottom: 16px;  /* Larger gap to YouTube content */
 }
+
+.playlist-video-grid.empty-state {
+  min-height: 100px; /* Smaller container */
+  max-height: 100px;
+  display: flex;
+  align-items: flex-start; /* Align to top */
+  justify-content: center;
+  padding-top: 30px; /* Push text down from very top */
+}

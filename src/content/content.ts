@@ -280,18 +280,20 @@ function updateVideoGrid(playlistId: string): void {
 
   // Handle empty results (no videos after filtering)
   if (playlistData.videos.length === 0) {
-    videoGrid.innerHTML = `
-      <div style="
-        padding: 20px;
-        text-align: center;
-        color: #666;
-        font-size: 14px;
-        width: 100%;
-      ">
-        <p style="margin: 0 0 8px 0;">No videos match your current filters</p>
-        <p style="margin: 0; font-size: 12px;">Try adjusting your filter settings in the extension popup</p>
-      </div>
-    `;
+    videoGrid.classList.add('empty-state'); // Add the CSS class
+  videoGrid.innerHTML = `
+    <div style="
+      padding: 0px 8px;
+      text-align: center;
+      color: #666;
+      font-size: 24px;
+      line-height: 1.4;
+      width: 100%;
+    ">
+      <p style="margin: 0 0 6px 0; font-size: 20px;">No videos match your current filters</p>
+      <p style="margin: 0; font-size: 16px; color: #888;">Try adjusting your filter settings in the extension popup</p>
+    </div>
+  `;
     
     // Hide pagination arrows for empty results
     updateArrowVisibility(playlistId);
@@ -299,6 +301,9 @@ function updateVideoGrid(playlistId: string): void {
   }
 
   const currentVideos = getCurrentPageVideos(playlistData);
+
+  // Remove empty state class when showing videos
+  videoGrid.classList.remove('empty-state');
 
   // Add fade-out class for animation
   videoGrid.classList.add("page-transition");
@@ -462,7 +467,7 @@ async function getAuthToken(): Promise<string | null> {
       if (response && response.token) {
         resolve(response.token);
       } else {
-        console.warn("No auth token available");
+        console.log("No auth token available");
         resolve(null);
       }
     });
@@ -492,14 +497,14 @@ async function fetchMultiplePlaylistsData(): Promise<MultiPlaylistData[] | null>
     // Get auth token from background script
     const authToken = await getAuthToken();
     if (!authToken) {
-      console.error("No auth token available for API calls");
+      console.log("No auth token available for API calls");
       return null;
     }
 
     // Get selected playlist IDs from storage
     const selectedPlaylistIds = await getSelectedPlaylists();
     if (selectedPlaylistIds.length === 0) {
-      console.warn("No playlists selected");
+      //console.warn("No playlists selected");
       return null;
     }
 

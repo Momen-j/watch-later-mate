@@ -50,37 +50,33 @@ async function injectPlaylistContent(tabId) {
   }
 }
 
-/**
- * Retrieves stored auth token
- */
-async function getStoredAuthToken() {
-  try {
-    if (!chrome.storage || !chrome.storage.local) {
-      throw new Error('chrome.storage.local is not available');
-    }
-    const result = await chrome.storage.local.get(['authToken']);
-    return result.authToken || null;
-  } catch (error) {
-    console.error('Failed to retrieve auth token:', error);
-    return null;
-  }
-}
+// Function to get token with automatic refresh
+const getValidToken = async () => {
+  return new Promise((resolve) => {
+    // First check if user manually signed out
+    chrome.storage.local.get(['manualSignOut'], (result) => {
+      if (result.manualSignOut) {
+        console.log("User manually signed out, requiring interactive auth");
+        resolve(null);
+        return;
+      }
 
-/**
- * Stores auth token
- */
-async function storeAuthToken(token) {
-  try {
-    if (!chrome.storage || !chrome.storage.local) {
-      throw new Error('chrome.storage.local is not available');
-    }
-    await chrome.storage.local.set({ authToken: token });
-    console.log('Auth token stored successfully');
-  } catch (error) {
-    console.error('Failed to store auth token:', error);
-    throw error;
-  }
-}
+      // Chrome handles token refresh automatically with interactive: false
+      chrome.identity.getAuthToken({ interactive: false }, (token) => {
+        if (chrome.runtime.lastError) {
+          console.log("No auth token available (user signed out or not authenticated)");
+          resolve(null);
+        } else if (token) {
+          console.log("Got valid token (refreshed if needed)");
+          resolve(token);
+        } else {
+          console.log("No token returned");
+          resolve(null);
+        }
+      });
+    });
+  });
+};
 
 /**
  * Handles tab updates (page loads)
@@ -193,20 +189,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handleMessage = async () => {
     try {
       switch (message.type) {
-        case 'STORE_AUTH_TOKEN':
-          await storeAuthToken(message.token);
-          return { success: true };
 
         case 'GET_AUTH_TOKEN':
-          { const token = await getStoredAuthToken();
-          return { token: token }; }
+        { const token = await getValidToken();
+        return { token: token }; }
 
         case 'CLEAR_AUTH_TOKEN':
-          if (!chrome.storage || !chrome.storage.local) {
-            throw new Error('chrome.storage.local is not available');
-          }
-          await chrome.storage.local.remove(['authToken']);
-          return { success: true };
+          return new Promise((resolve) => {
+            chrome.identity.clearAllCachedAuthTokens(() => {
+              console.log("All cached tokens cleared");
+              // Add a small delay to ensure clearing is complete
+              setTimeout(() => {
+                resolve({ success: true });
+              }, 100);
+            });
+          });
 
         default:
           console.warn('Unknown message type:', message.type);
