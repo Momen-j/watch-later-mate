@@ -618,10 +618,50 @@ function App() {
     };
   };
 
-  // Check if playlist has custom settings
-  const hasCustomSettings = (playlistId: string): boolean => {
-    return playlistId in playlistSettings;
-  };
+  // Check if playlist has custom settings that are actually active
+const hasCustomSettings = (playlistId: string): boolean => {
+  const storedSettings = playlistSettings[playlistId];
+  if (!storedSettings) return false;
+  
+  const defaults = getDefaultSettings();
+  
+  // Check if any filters are different from defaults
+  const filters = storedSettings.filters;
+  
+  // Keywords filter
+  if (filters.keywords && filters.keywords.trim() !== '') return true;
+  
+  // View count filter
+  if (filters.viewCount.min !== defaults.filters.viewCount.min || 
+      filters.viewCount.max !== defaults.filters.viewCount.max) return true;
+  
+  // Like count filter
+  if (filters.likeCount.min !== defaults.filters.likeCount.min || 
+      filters.likeCount.max !== defaults.filters.likeCount.max) return true;
+  
+  // Comment count filter
+  if (filters.commentCount.min !== defaults.filters.commentCount.min || 
+      filters.commentCount.max !== defaults.filters.commentCount.max) return true;
+  
+  // Duration filter
+  if (filters.duration.min !== defaults.filters.duration.min || 
+      filters.duration.max !== defaults.filters.duration.max) return true;
+  
+  // Upload date filter
+  if (filters.uploadDate !== defaults.filters.uploadDate) return true;
+  
+  // Categories filter
+  if (filters.categories.length > 0) return true;
+  
+  // Channels filter
+  if (filters.channels.length > 0) return true;
+  
+  // Sort settings
+  if (storedSettings.sort.by !== defaults.sort.by || 
+      storedSettings.sort.direction !== defaults.sort.direction) return true;
+  
+  return false;
+};
 
   return (
     <div className="App" style={{ 
@@ -856,35 +896,38 @@ function App() {
                   </h5>
 
                   {/* Keywords */}
-                  <div style={{ marginBottom: "8px" }}>
-                    <label
-                      style={{
-                        display: "block",
-                        fontSize: "11px",
-                        marginBottom: "2px",
-                      }}
-                    >
-                      Keywords:
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.filters.keywords}
-                      onChange={(e) =>
-                        updatePlaylistSetting(
-                          playlist.id,
-                          ["filters", "keywords"],
-                          e.target.value
-                        )
-                      }
-                      placeholder="Search in titles..."
-                      style={{
-                        width: "100%",
-                        padding: "4px",
-                        border: "1px solid #ccc",
-                        borderRadius: "3px",
-                        fontSize: "11px",
-                      }}
-                    />
+                  <div style={{ display: "flex", gap: "6px", marginBottom: "8px" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <label
+                        style={{
+                          display: "block",
+                          fontSize: "11px",
+                          marginBottom: "2px",
+                        }}
+                      >
+                        Keywords:
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.filters.keywords}
+                        onChange={(e) =>
+                          updatePlaylistSetting(
+                            playlist.id,
+                            ["filters", "keywords"],
+                            e.target.value
+                          )
+                        }
+                        placeholder="Search in titles..."
+                        style={{
+                          width: "100%",
+                          padding: "4px",
+                          border: "1px solid #ccc",
+                          borderRadius: "3px",
+                          fontSize: "11px",
+                          boxSizing: "border-box"
+                        }}
+                      />
+                    </div>
                   </div>
 
                   {/* Upload Date & Category Row */}
