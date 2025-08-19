@@ -5,7 +5,6 @@ import { YoutubeApiService } from "../api/YoutubeApiService";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 if ((window as any).playlistExtensionLoaded) {
   console.log("🛑 Content script already loaded, skipping");
-  throw new Error("Content script already loaded");
 } else {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).playlistExtensionLoaded = true;
@@ -1158,6 +1157,21 @@ async function injectPlaylists(): Promise<void> {
   }
 }
 
+  // Add debounce function
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+function debounce(func: Function, wait: number) {
+  let timeout: NodeJS.Timeout;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return function executedFunction(...args: any[]) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 /**
  * Enhanced injection with persistent observer and dynamic video count
  */
@@ -1171,52 +1185,76 @@ async function injectPlaylistsWithObserver(): Promise<void> {
   // Try immediate injection first
   await injectPlaylists();
 
-  // Set up observer with proper cleanup
-const observer = new MutationObserver(async (mutations) => {
-  // Check if we've already injected
-  if (document.querySelector('[id^="custom-playlist-container-"]')) {
-    console.log("✅ Playlists found, disconnecting observer to prevent duplicates");
-    observer.disconnect(); // DISCONNECT once injection is successful
-    return;
-  }
-
-  // Look for new content being added
-  for (const mutation of mutations) {
-    if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
-      // Try to inject again when new content is added
-      setTimeout(async () => {
-        if (!document.querySelector('[id^="custom-playlist-container-"]')) {
-          await injectPlaylists();
-          // Check again after injection and disconnect if successful
-          if (document.querySelector('[id^="custom-playlist-container-"]')) {
-            console.log("✅ Injection successful, disconnecting observer");
-            observer.disconnect();
+  // Set up observer with navigation detection built-in
+  let lastUrl = location.href;
+  
+  const observer = new MutationObserver(async (mutations) => {
+    // Check for URL changes (navigation detection)
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      
+      // Clean up existing playlists on navigation
+      const existingPlaylists = document.querySelectorAll('[data-custom-playlist="true"]');
+      existingPlaylists.forEach(playlist => playlist.remove());
+      playlistsData = [];
+      
+      // Only re-inject on homepage after delay
+      if (location.href === 'https://www.youtube.com/') {
+        setTimeout(async () => {
+          if (!document.querySelector('[data-custom-playlist="true"]')) {
+            await injectPlaylists();
           }
-        }
-      }, 100);
-      break;
+        }, 2000);
+      }
+      return;
     }
-  }
-});
+
+    // Original content detection logic
+    if (document.querySelector('[id^="custom-playlist-container-"]')) {
+      console.log("✅ Playlists found, disconnecting observer to prevent duplicates");
+      observer.disconnect();
+      return;
+    }
+
+    // Look for new content being added
+    for (const mutation of mutations) {
+      if (mutation.type === "childList" && mutation.addedNodes.length > 0) {
+        setTimeout(async () => {
+          if (!document.querySelector('[id^="custom-playlist-container-"]')) {
+            await injectPlaylists();
+            if (document.querySelector('[id^="custom-playlist-container-"]')) {
+              console.log("✅ Injection successful, disconnecting observer");
+              observer.disconnect();
+            }
+          }
+        }, 100);
+        break;
+      }
+    }
+  });
 
   // Observe the main content area persistently
-  const mainContent =
-    document.querySelector('ytd-browse[page-subtype="home"]') || document.body;
+  const mainContent = document.querySelector('ytd-browse[page-subtype="home"]') || document.body;
   observer.observe(mainContent, {
     childList: true,
     subtree: true,
   });
+}
 
-  // Add window resize handler for layout changes
-  window.addEventListener("resize", async () => {
-    // Update video counts when window resizes
+// Scoped resize handler that only affects OUR playlists
+window.addEventListener("resize", debounce(() => {
+  // Only update OUR playlist videos, not YouTube's native content
+  if (playlistsData.length > 0) {
+    console.log("🔄 Resize detected, updating playlist layouts...");
     playlistsData.forEach((playlist) => {
       const newVideosPerPage = calculateVideosPerPage();
-      playlist.paginationState.videosPerPage = newVideosPerPage;
-      //playlist.paginationState.currentPage = 0; // Reset to first page
-      updateVideoGrid(playlist.id);
+      if (playlist.paginationState.videosPerPage !== newVideosPerPage) {
+        playlist.paginationState.videosPerPage = newVideosPerPage;
+        updateVideoGrid(playlist.id);
+      }
     });
-  });
+  }
+}, 250));
 
   // Add visibility change handler for minimize/restore
   document.addEventListener("visibilitychange", async () => {
@@ -1229,7 +1267,6 @@ const observer = new MutationObserver(async (mutations) => {
       }, 500);
     }
   });
-}
 
 /**
  * Dynamically calculates videos per page based on screen width
