@@ -545,13 +545,16 @@ async function fetchMultiplePlaylistsData(): Promise<MultiPlaylistData[] | null>
 
       try {
         let videos: Video[];
+        const shouldFetchAll = false; // For now, keep it false during testing
 
         if (playlist.id === "LIKED_VIDEOS") {
           console.log("🔍 Calling getLikedVideosPlaylist...");
-          videos = await apiService.getLikedVideosPlaylist(50);
+          videos = await apiService.getLikedVideosPlaylist(true/*shouldFetchAll*/);
+          console.log(`Got ${videos.length} videos in Liked Playlist`); 
         } else {
           console.log("🔍 Calling getCompletePlaylistData...");
-          videos = await apiService.getCompletePlaylistData(playlist.id, 50);
+          videos = await apiService.getCompletePlaylistData(playlist.id, shouldFetchAll); 
+          console.log(`Got ${videos.length} videos in ${playlist.title}`); 
         }
 
         if (videos.length > 0) {

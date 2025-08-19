@@ -298,40 +298,37 @@ class YoutubeApiService {
   }
 
   /**
-   * Main method: Gets a complete playlist with full video details
-   * Combines playlist items + video details + categories into Videos interface
-   */
+ * Main method: Gets a complete playlist with full video details
+ * NOW WITH PAGINATION SUPPORT
+ */
   async getCompletePlaylistData(
     playlistId: string,
-    maxResults: number = 50
+    fetchAll: boolean = false  // NEW: Add this parameter
   ): Promise<Video[]> {
     try {
-      // Step 1: Get playlist items
-      const playlistItems = await this.getPlaylistVideos(
-        playlistId,
-        maxResults
-      );
+      if (!fetchAll) {
+        // Original behavior - fetch 50 videos
+        const playlistItems = await this.getPlaylistVideos(playlistId, 50);
+        
+        if (playlistItems.length === 0) {
+          return [];
+        }
 
-      if (playlistItems.length === 0) {
-        return [];
+        const videoIds = playlistItems.map(
+          (item) => item.snippet.resourceId.videoId
+        );
+
+        const videoDetails = await this.getVideoDetails(videoIds);
+
+        if (this.categoryCache.size === 0) {
+          await this.getVideoCategories();
+        }
+
+        return await this.transformToVideoInterface(playlistItems, videoDetails);
       }
-
-      // Step 2: Extract video IDs
-      const videoIds = playlistItems.map(
-        (item) => item.snippet.resourceId.videoId
-      );
-
-      // Step 3: Get detailed video info
-      const videoDetails = await this.getVideoDetails(videoIds);
-
-      // REMOVE ANY CODE INVOLVING THIS STEP AFTER DBL CHECK
-      // Step 4: Ensure category data is cached
-      if (this.categoryCache.size === 0) {
-        await this.getVideoCategories();
-      }
-
-      // Step 5: combine data to match Video interface
-      return await this.transformToVideoInterface(playlistItems, videoDetails);
+      
+      // NEW: Fetch ALL videos with pagination
+      return this.getAllPlaylistVideos(playlistId);
     } catch (error) {
       console.error(
         `Failed to get complete playlist data for ${playlistId}`,
@@ -339,6 +336,71 @@ class YoutubeApiService {
       );
       throw error;
     }
+  }
+
+  /**
+   * NEW: Fetches ALL videos from a playlist using pagination
+   */
+  private async getAllPlaylistVideos(playlistId: string): Promise<Video[]> {
+    const allVideos: Video[] = [];
+    let nextPageToken: string | undefined;
+    let pageCount = 0;
+    const maxPages = 20; // Safety limit (20 pages × 50 = 1000 videos max)
+    
+    console.log(`📄 Starting pagination for playlist ${playlistId}`);
+    
+    do {
+      try {
+        console.log(`📄 Fetching page ${pageCount + 1}${nextPageToken ? ` (token: ${nextPageToken.substring(0, 10)}...)` : ''}`);
+        
+        // Get playlist items for this page
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await this.makeApiRequest<any>("playlistItems", {
+          part: "snippet",
+          playlistId: playlistId,
+          maxResults: "50",
+          ...(nextPageToken && { pageToken: nextPageToken })
+        });
+        
+        if (response.items?.length > 0) {
+          // Extract video IDs
+          const videoIds = response.items
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .map((item: any) => item.snippet.resourceId.videoId)
+            .filter((id: string) => id); // Remove any undefined IDs
+          
+          if (videoIds.length > 0) {
+            // Get detailed video info
+            const videoDetails = await this.getVideoDetails(videoIds);
+            
+            // Transform to Video interface
+            const transformedVideos = await this.transformToVideoInterface(response.items, videoDetails);
+            
+            allVideos.push(...transformedVideos);
+            console.log(`📄 Page ${pageCount + 1}: Added ${transformedVideos.length} videos (total: ${allVideos.length})`);
+          }
+        } else {
+          console.log(`📄 Page ${pageCount + 1}: No items returned`);
+        }
+        
+        nextPageToken = response.nextPageToken;
+        pageCount++;
+        
+        // Progress logging for user feedback
+        if (pageCount % 5 === 0) {
+          console.log(`📊 Progress: Fetched ${pageCount} pages, ${allVideos.length} videos total`);
+        }
+        
+      } catch (error) {
+        console.error(`❌ Error fetching page ${pageCount + 1}:`, error);
+        // Don't break the loop - try to continue with what we have
+        break;
+      }
+      
+    } while (nextPageToken && pageCount < maxPages);
+    
+    console.log(`✅ Pagination complete: ${allVideos.length} videos from ${pageCount} pages`);
+    return allVideos;
   }
 
   /**
@@ -413,16 +475,16 @@ class YoutubeApiService {
    * Get the "Liked Videos" playlist
    * Has a special playlist ID that's the same across all users
    */
-  async getLikedVideosPlaylist(maxResults: number = 50): Promise<Video[]> {
-    console.log("Fetching Liked Videos playlist...");
+  async getLikedVideosPlaylist(fetchAll: boolean = false): Promise<Video[]> {  // NEW: Add fetchAll parameter
+  console.log(`Fetching Liked Videos playlist (fetchAll: ${fetchAll})...`);
 
-    try {
-      return await this.getCompletePlaylistData("LL", maxResults);
-    } catch (error) {
-      console.error("Liked Videos fetch failed:", error);
-      return [];
-    }
+  try {
+    return await this.getCompletePlaylistData("LL", fetchAll);  // Pass the fetchAll parameter
+  } catch (error) {
+    console.error("Liked Videos fetch failed:", error);
+    return [];
   }
+}
 }
 
 export { YoutubeApiService };
