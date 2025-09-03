@@ -302,41 +302,60 @@ class YoutubeApiService {
  * NOW WITH PAGINATION SUPPORT
  */
   async getCompletePlaylistData(
-    playlistId: string,
-    fetchAll: boolean = false  // NEW: Add this parameter
-  ): Promise<Video[]> {
-    try {
-      if (!fetchAll) {
-        // Original behavior - fetch 50 videos
-        const playlistItems = await this.getPlaylistVideos(playlistId, 50);
+  playlistId: string,
+  maxResults: number | 'all' = 50
+): Promise<Video[]> {
+  try {
+    if (maxResults !== 'all') {
+      // Handle multi-page fetching for counts > 50
+      // eslint-disable-next-line prefer-const
+      let allPlaylistItems: YoutubePlaylistItem[] = [];
+      let nextPageToken: string | undefined;
+      let fetchedCount = 0;
+
+      while (fetchedCount < maxResults) {
+        const remainingNeeded = maxResults - fetchedCount;
+        const batchSize = Math.min(remainingNeeded, 50); // Max 50 per API call
         
-        if (playlistItems.length === 0) {
-          return [];
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await this.makeApiRequest<any>("playlistItems", {
+          part: "snippet",
+          playlistId: playlistId,
+          maxResults: batchSize.toString(),
+          ...(nextPageToken && { pageToken: nextPageToken })
+        });
 
-        const videoIds = playlistItems.map(
-          (item) => item.snippet.resourceId.videoId
-        );
+        if (!response.items?.length) break;
+        
+        allPlaylistItems.push(...response.items);
+        fetchedCount += response.items.length;
+        nextPageToken = response.nextPageToken;
 
-        const videoDetails = await this.getVideoDetails(videoIds);
-
-        if (this.categoryCache.size === 0) {
-          await this.getVideoCategories();
-        }
-
-        return await this.transformToVideoInterface(playlistItems, videoDetails);
+        if (!nextPageToken) break; // No more pages
       }
+
+      if (allPlaylistItems.length === 0) return [];
+
+      const videoIds = allPlaylistItems.map(item => item.snippet.resourceId.videoId);
+      const videoDetails = await this.getVideoDetails(videoIds);
       
-      // NEW: Fetch ALL videos with pagination
-      return this.getAllPlaylistVideos(playlistId);
-    } catch (error) {
-      console.error(
-        `Failed to get complete playlist data for ${playlistId}`,
-        error
-      );
-      throw error;
+      if (this.categoryCache.size === 0) {
+        await this.getVideoCategories();
+      }
+
+      return await this.transformToVideoInterface(allPlaylistItems, videoDetails);
     }
+    
+    // Fetch ALL videos with pagination
+    return this.getAllPlaylistVideos(playlistId);
+  } catch (error) {
+    console.error(
+      `Failed to get complete playlist data for ${playlistId}`,
+      error
+    );
+    throw error;
   }
+}
 
   /**
    * NEW: Fetches ALL videos from a playlist using pagination
@@ -475,16 +494,16 @@ class YoutubeApiService {
    * Get the "Liked Videos" playlist
    * Has a special playlist ID that's the same across all users
    */
-  async getLikedVideosPlaylist(fetchAll: boolean = false): Promise<Video[]> {  // NEW: Add fetchAll parameter
-  console.log(`Fetching Liked Videos playlist (fetchAll: ${fetchAll})...`);
+  async getLikedVideosPlaylist(maxResults: number | 'all' = 50): Promise<Video[]> {
+    console.log(`Fetching Liked Videos playlist (maxResults: ${maxResults})...`);
 
-  try {
-    return await this.getCompletePlaylistData("LL", fetchAll);  // Pass the fetchAll parameter
-  } catch (error) {
-    console.error("Liked Videos fetch failed:", error);
-    return [];
+    try {
+      return await this.getCompletePlaylistData("LL", maxResults);
+    } catch (error) {
+      console.error("Liked Videos fetch failed:", error);
+      return [];
+    }
   }
-}
 }
 
 export { YoutubeApiService };

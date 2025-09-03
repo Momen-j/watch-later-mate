@@ -237,6 +237,7 @@ function App() {
   );
   const [playlistSearchTerm, setPlaylistSearchTerm] = useState<string>("");
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [videoFetchCount, setVideoFetchCount] = useState<50 | 200 | 'all'>(50);
 
   // Check for existing auth token and settings on popup load
   useEffect(() => {
@@ -266,7 +267,7 @@ function App() {
         );
 
         // Get saved playlist selection and per-playlist settings
-        chrome.storage.local.get(["selectedPlaylists"], (result) => {
+        chrome.storage.local.get(["selectedPlaylists", "videoFetchCount"], (result) => {
           if (result.selectedPlaylists) {
             setSavedSettings(result.selectedPlaylists);
             setSelectedPlaylistIds(result.selectedPlaylists.playlistIds || []);
@@ -275,6 +276,11 @@ function App() {
             if (result.selectedPlaylists.playlistSettings) {
               setPlaylistSettings(result.selectedPlaylists.playlistSettings);
             }
+          }
+          
+          // NEW: Load video fetch count setting
+          if (result.videoFetchCount) {
+            setVideoFetchCount(result.videoFetchCount);
           }
         });
       } catch (error) {
@@ -454,7 +460,11 @@ function App() {
       playlistSettings: playlistSettings,
     };
 
-    chrome.storage.local.set({ selectedPlaylists: settings }, () => {
+    // Save both playlist selection and video count
+    chrome.storage.local.set({ 
+      selectedPlaylists: settings,
+      videoFetchCount: videoFetchCount  // NEW: Save video count setting
+    }, () => {
       if (chrome.runtime.lastError) {
         console.error(
           "Failed to save playlist selection:",
@@ -666,7 +676,7 @@ const hasCustomSettings = (playlistId: string): boolean => {
   return (
     <div className="App" style={{ 
       width: "400px", 
-      padding: "16px", 
+      padding: "12px", 
       overflow: "hidden", 
       height: !authToken || playlists.length === 0 ? "120px" : "550px"
     }}>
@@ -760,6 +770,88 @@ const hasCustomSettings = (playlistId: string): boolean => {
                     )}
                   </div>
                 </div>
+
+                {/* Video Count Selection */}
+                <div style={{ 
+                  marginBottom: "12px",
+                  //padding: selectedPlaylistIds.length > 0 ? "8px" : "0px",
+                  height: selectedPlaylistIds.length > 0 ? "auto" : "15px", // Reserve 40px when hidden
+                  visibility: selectedPlaylistIds.length > 0 ? "visible" : "hidden"
+                }}>
+                {selectedPlaylistIds.length > 0 && (
+                  <div style={{ 
+                    display: "flex", 
+                    alignItems: "center",
+                    gap: "12px"
+                  }}>
+                    <h4 style={{ 
+                      margin: "0", 
+                      fontSize: "13px",
+                      color: "white",
+                      flexShrink: 0
+                    }}>
+                      Video Count:
+                    </h4>
+                    
+                    <div style={{ 
+                      display: "flex", 
+                      gap: "12px", 
+                      alignItems: "center"
+                    }}>
+                      <label style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        gap: "4px",
+                        fontSize: "12px",
+                        cursor: "pointer"
+                      }}>
+                        <input
+                          type="radio"
+                          name="videoCount"
+                          value="50"
+                          checked={videoFetchCount === 50}
+                          onChange={() => setVideoFetchCount(50)}
+                        />
+                        50
+                      </label>
+                      
+                      <label style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        gap: "4px",
+                        fontSize: "12px",
+                        cursor: "pointer"
+                      }}>
+                        <input
+                          type="radio"
+                          name="videoCount"
+                          value="200"
+                          checked={videoFetchCount === 200}
+                          onChange={() => setVideoFetchCount(200)}
+                        />
+                        200
+                      </label>
+                      
+                      <label style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        gap: "4px",
+                        fontSize: "12px",
+                        cursor: "pointer"
+                      }}>
+                        <input
+                          type="radio"
+                          name="videoCount"
+                          value="all"
+                          checked={videoFetchCount === 'all'}
+                          onChange={() => setVideoFetchCount('all')}
+                        />
+                        All
+                      </label>
+                    </div>  
+                  </div> 
+                )}
+              </div>
 
                 {/* Live Search Bar */}
                 <div style={{ marginBottom: "12px" }}>

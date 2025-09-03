@@ -1301,24 +1301,26 @@ async function checkPlaylistCache(selectedPlaylistIds: string[]): Promise<{
       const freshPlaylists: CachedPlaylistData[] = [];
 
       selectedPlaylistIds.forEach(playlistId => {
-        const cachedData = cache[playlistId];
+      // Normalize the playlist ID for cache lookup
+      const cacheKey = playlistId === "LL" ? "LIKED_VIDEOS" : playlistId;
+      const cachedData = cache[cacheKey];  // Use normalized key
+      
+      if (cachedData) {
+        cachedPlaylists.push(cachedData);
         
-        if (cachedData) {
-          cachedPlaylists.push(cachedData);
-          
-          // Check if cache is still fresh
-          if (now - cachedData.lastFetched < CACHE_DURATION) {
-            freshPlaylists.push(cachedData);
-            console.log(`⚡ Using cached data for "${cachedData.title}" (${cachedData.totalVideos} videos)`);
-          } else {
-            expiredPlaylists.push(playlistId);
-            console.log(`⏰ Cache expired for "${cachedData.title}", will refetch`);
-          }
+        // Check if cache is still fresh
+        if (now - cachedData.lastFetched < CACHE_DURATION) {
+          freshPlaylists.push(cachedData);
+          console.log(`⚡ Using cached data for "${cachedData.title}" (${cachedData.totalVideos} videos)`);
         } else {
-          expiredPlaylists.push(playlistId);
-          console.log(`📥 No cache found for playlist ${playlistId}, will fetch`);
+          expiredPlaylists.push(playlistId);  // Keep original ID for fetching
+          console.log(`⏰ Cache expired for "${cachedData.title}", will refetch`);
         }
-      });
+      } else {
+        expiredPlaylists.push(playlistId);  // Keep original ID for fetching
+        console.log(`📥 No cache found for playlist ${playlistId}, will fetch`);
+      }
+    });
 
       resolve({ cachedPlaylists, expiredPlaylists, freshPlaylists });
     });
@@ -1370,21 +1372,21 @@ async function fetchPlaylistsFromAPI(playlistIds: string[]): Promise<CachedPlayl
 
     const playlistsData: CachedPlaylistData[] = [];
 
-    // Get user preference for fetching all videos
-    const shouldFetchAll = await getShouldFetchAllVideos();
+    // Get user preference for video count
+    const videoFetchCount = await getVideoFetchCount();
 
     for (const playlist of selectedPlaylists) {
-      console.log(`Fetching videos from playlist: "${playlist.title}" (fetchAll: ${shouldFetchAll})`);
+      console.log(`Fetching videos from playlist: "${playlist.title}" (fetchAll: ${videoFetchCount})`);
 
       try {
         let videos: Video[];
 
         if (playlist.id === "LIKED_VIDEOS") {
           console.log("🔍 Calling getLikedVideosPlaylist...");
-          videos = await apiService.getLikedVideosPlaylist(shouldFetchAll);
+          videos = await apiService.getLikedVideosPlaylist(videoFetchCount);
         } else {
           console.log("🔍 Calling getCompletePlaylistData...");
-          videos = await apiService.getCompletePlaylistData(playlist.id, shouldFetchAll);
+          videos = await apiService.getCompletePlaylistData(playlist.id, videoFetchCount);
         }
 
         if (videos.length > 0) {
@@ -1442,10 +1444,10 @@ async function updatePlaylistCache(newPlaylistData: CachedPlaylistData[]): Promi
 /**
  * Get user preference for fetching all videos
  */
-async function getShouldFetchAllVideos(): Promise<boolean> {
+async function getVideoFetchCount(): Promise<50 | 200 | 'all'> {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['fetchAllVideos'], (result) => {
-      resolve(result.fetchAllVideos === true);
+    chrome.storage.local.get(['videoFetchCount'], (result) => {
+      resolve(result.videoFetchCount || 50); // Default to 50
     });
   });
 }
