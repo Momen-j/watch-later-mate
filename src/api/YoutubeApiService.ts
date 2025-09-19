@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-catch */
 // Interface for basic playlist information (what is retrieve from the playlists endpoint)
 interface PlaylistInfo {
   id: string;
@@ -93,16 +94,17 @@ class YoutubeApiService {
    * Generic method to make authenticated requests to YouTube Api
    */
   private async makeApiRequest<T>(
-    endpoint: string,
-    params: Record<string, string> = {}
-  ): Promise<T> {
-    const url = new URL(`${this.baseUrl}/${endpoint}`);
+  endpoint: string,
+  params: Record<string, string> = {}
+): Promise<T> {
+  const url = new URL(`${this.baseUrl}/${endpoint}`);
 
-    // add params to url
-    Object.entries(params).forEach(([key, value]) => {
-      url.searchParams.append(key, value);
-    });
+  // add params to url
+  Object.entries(params).forEach(([key, value]) => {
+    url.searchParams.append(key, value);
+  });
 
+  try {
     // make request to endpoint using inserted search params
     const response = await fetch(url.toString(), {
       headers: {
@@ -114,15 +116,19 @@ class YoutubeApiService {
     // if response isn't okay
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      const errorMessage = errorData.error?.message || "Unknown error";
+      
       throw new Error(
-        `YouTube API Error: ${response.status} - ${
-          errorData.error?.message || "Unknown error"
-        }`
+        `YouTube API Error: ${response.status} - ${errorMessage}`
       );
     }
 
     return response.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (error: any) {
+    throw error;
   }
+}
 
   /**
    * Fetches all user playlists (their own playlists, not subscriptions)
@@ -298,6 +304,19 @@ class YoutubeApiService {
   }
 
   /**
+   * Ensures categories are loaded exactly once per API service instance
+  */
+  private async ensureCategoriesLoaded(): Promise<void> {
+    if (this.categoryCache.size === 0) {
+      console.log("📋 Loading video categories (one-time setup)");
+      await this.getVideoCategories();
+      console.log(`📋 Cached ${this.categoryCache.size} video categories`);
+    } else {
+      console.log(`📋 Using existing category cache (${this.categoryCache.size} categories)`);
+    }
+  }
+
+  /**
  * Main method: Gets a complete playlist with full video details
  * NOW WITH PAGINATION SUPPORT
  */
@@ -339,9 +358,7 @@ class YoutubeApiService {
       const videoIds = allPlaylistItems.map(item => item.snippet.resourceId.videoId);
       const videoDetails = await this.getVideoDetails(videoIds);
       
-      if (this.categoryCache.size === 0) {
-        await this.getVideoCategories();
-      }
+      await this.ensureCategoriesLoaded();
 
       return await this.transformToVideoInterface(allPlaylistItems, videoDetails);
     }
@@ -367,6 +384,9 @@ class YoutubeApiService {
     const maxPages = 20; // Safety limit (20 pages × 50 = 1000 videos max)
     
     console.log(`📄 Starting pagination for playlist ${playlistId}`);
+
+    // Load categories once before processing any videos
+    await this.ensureCategoriesLoaded();
     
     do {
       try {
@@ -412,7 +432,7 @@ class YoutubeApiService {
         
       } catch (error) {
         console.error(`❌ Error fetching page ${pageCount + 1}:`, error);
-        // Don't break the loop - try to continue with what we have
+        // Break the loop on error - return partial results rather than fail completely
         break;
       }
       

@@ -511,6 +511,30 @@ async function getSelectedPlaylists(): Promise<string[]> {
 }
 
 /**
+ * Track API Call metrics
+ * @param endpoint 
+ * @param responseTime 
+ * @param success 
+ * @param error 
+ */
+async function trackAPICall(endpoint: string, responseTime: number, success: boolean, error?: string) {
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'TRACK_API_CALL',
+      data: {
+        endpoint: endpoint,
+        responseTime: responseTime,
+        success: success,
+        error: error
+      }
+    });
+    console.log('📊 API tracking sent:', endpoint);
+  } catch (error) {
+    console.warn('📊 Failed to track API call:', error);
+  }
+}
+
+/**
  * Fetches multiple playlists data from YouTube API and applies filters/sorting
  */
 async function fetchMultiplePlaylistsData(): Promise<MultiPlaylistData[] | null> {
@@ -528,6 +552,20 @@ async function fetchMultiplePlaylistsData(): Promise<MultiPlaylistData[] | null>
     const { cachedPlaylists, expiredPlaylists, freshPlaylists } = await checkPlaylistCache(selectedPlaylistIds);
 
     console.log(`📊 Cache status: ${freshPlaylists.length} fresh, ${expiredPlaylists.length} expired, ${cachedPlaylists.length} total cached`);
+
+    // Track cache performance
+    const videoFetchCount = await getVideoFetchCount();
+    chrome.runtime.sendMessage({
+      type: 'TRACK_CACHE_PERFORMANCE',
+      data: {
+        cache_status: expiredPlaylists.length > 0 ? 'miss' : 'hit',
+        video_fetch_count: videoFetchCount,
+        playlists_cached: freshPlaylists.length,
+        playlists_expired: expiredPlaylists.length
+      }
+    }).catch(() => {
+      // Ignore errors if background script isn't available
+    });
 
     // eslint-disable-next-line prefer-const
     let allPlaylistData: CachedPlaylistData[] = [...freshPlaylists];
@@ -1344,7 +1382,18 @@ async function fetchPlaylistsFromAPI(playlistIds: string[]): Promise<CachedPlayl
 
     // Get user's playlists info (only if we need non-LIKED_VIDEOS playlists)
     const regularPlaylistIds = playlistIds.filter((id) => id !== "LL");
-    const allPlaylists = regularPlaylistIds.length > 0 ? await apiService.getUserPlaylists(25) : [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let allPlaylists: any[] = [];
+    if (regularPlaylistIds.length > 0) {
+      const startTime = Date.now();
+      try {
+        allPlaylists = await apiService.getUserPlaylists(25);
+        await trackAPICall('playlists', Date.now() - startTime, true);
+      } catch (error) {
+        await trackAPICall('playlists', Date.now() - startTime, false, (error as Error).message);
+        throw error;
+      }
+    }
 
     // Create minimal playlist info for the playlists we need to fetch
     const selectedPlaylists = playlistIds
@@ -1383,10 +1432,24 @@ async function fetchPlaylistsFromAPI(playlistIds: string[]): Promise<CachedPlayl
 
         if (playlist.id === "LIKED_VIDEOS") {
           console.log("🔍 Calling getLikedVideosPlaylist...");
-          videos = await apiService.getLikedVideosPlaylist(videoFetchCount);
+          const startTime = Date.now();
+          try {
+            videos = await apiService.getLikedVideosPlaylist(videoFetchCount);
+            await trackAPICall('playlistItems', Date.now() - startTime, true);
+          } catch (error) {
+            await trackAPICall('playlistItems', Date.now() - startTime, false, (error as Error).message);
+            throw error;
+          }
         } else {
           console.log("🔍 Calling getCompletePlaylistData...");
-          videos = await apiService.getCompletePlaylistData(playlist.id, videoFetchCount);
+          const startTime = Date.now();
+          try {
+            videos = await apiService.getCompletePlaylistData(playlist.id, videoFetchCount);
+            await trackAPICall('playlistItems', Date.now() - startTime, true);
+          } catch (error) {
+            await trackAPICall('playlistItems', Date.now() - startTime, false, (error as Error).message);
+            throw error;
+          }
         }
 
         if (videos.length > 0) {

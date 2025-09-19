@@ -4,6 +4,67 @@
 // Enhanced background script for YouTube playlist extension
 // Handles SPA navigation detection and token management
 
+// Add GA4 configuration
+// MAKE A ENV VAR
+const GA_MEASUREMENT_ID = '';
+const GA4_API_SECRET = ''
+
+// Service worker compatible GA4 tracking
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function trackEvent(eventName: string, parameters: Record<string, any>) {
+  console.log('GA4 Debug: Sending event', eventName, 'with params:', parameters);
+  
+  const clientId = await generateClientId();
+  
+  const payload = {
+    client_id: clientId,
+    events: [{
+      name: eventName,
+      params: parameters
+    }]
+  };
+
+  console.log('GA4 Debug: Full payload:', JSON.stringify(payload, null, 2));
+  
+  const response = await fetch(`https://www.google-analytics.com/mp/collect?measurement_id=${GA_MEASUREMENT_ID}&api_secret=${GA4_API_SECRET}`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  
+  console.log('GA4 Debug: Response status:', response.status);
+  if (!response.ok) {
+    console.error('GA4 Debug: Response error:', await response.text());
+  }
+}
+
+// Generate consistent client ID for this extension instance
+async function generateClientId(): Promise<string> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['clientId'], (result) => {
+      if (result.clientId) {
+        resolve(result.clientId);
+      } else {
+        const clientId = crypto.randomUUID();
+        chrome.storage.local.set({ clientId }, () => {
+          resolve(clientId);
+        });
+      }
+    });
+  });
+}
+
+// Quota cost mapping (keep this)
+const QUOTA_COSTS = {
+  'playlists': 1,
+  'playlistItems': 1, 
+  'videos': 1,
+  'videoCategories': 1
+};
+
+function getQuotaCost(endpoint: string): number {
+  return QUOTA_COSTS[endpoint as keyof typeof QUOTA_COSTS] || 1;
+}
+
 // Track navigation state to detect SPA changes
 let lastUrl = {};
 
@@ -185,16 +246,23 @@ chrome.tabs.onRemoved.addListener((tabId) => {
  * Message handler for communication with popup and content scripts
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('🔧 DEBUG: Background received message:', message.type, message.data);
+  console.log('🔧 DEBUG: Message object:', JSON.stringify(message, null, 2));
+  
   // Always respond to keep the message port open
   const handleMessage = async () => {
+    console.log('🔧 DEBUG: Inside handleMessage function');
+    console.log('🔧 DEBUG: About to enter switch statement with:', message.type);
+    
     try {
       switch (message.type) {
-
         case 'GET_AUTH_TOKEN':
-        { const token = await getValidToken();
-        return { token: token }; }
+          console.log('🔧 DEBUG: Executing GET_AUTH_TOKEN case');
+          {const token = await getValidToken();
+          return { token: token }};
 
         case 'CLEAR_AUTH_TOKEN':
+          console.log('🔧 DEBUG: Executing CLEAR_AUTH_TOKEN case');
           return new Promise((resolve) => {
             chrome.identity.clearAllCachedAuthTokens(() => {
               console.log("All cached tokens cleared");
@@ -205,20 +273,80 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
           });
 
+        case 'TRACK_API_CALL':
+          console.log('🔧 DEBUG: *** ENTERING TRACK_API_CALL CASE ***');
+          console.log('🔧 DEBUG: About to process TRACK_API_CALL');
+          try {
+            const { endpoint, responseTime, success, error } = message.data;
+            console.log('🔧 DEBUG: Extracted data:', { endpoint, responseTime, success, error });
+
+            const quotaUnits = getQuotaCost(endpoint);
+            console.log('🔧 DEBUG: Quota units calculated:', quotaUnits);
+            console.log('🔧 DEBUG: About to call trackEvent');
+            
+            // Clean parameters for GA4 compatibility
+            const eventParams = {
+              'endpoint': endpoint,
+              'response_time': responseTime,  // Changed from response_time_ms
+              'quota_units': quotaUnits,
+              'success': success
+            };
+
+            // Only add error if it exists (avoid null values)
+            if (!success && error) {
+              eventParams['error_type'] = error;
+            }
+
+            await trackEvent('api_call_made', eventParams);
+            
+            console.log(`📊 Tracked API call: ${endpoint} (${quotaUnits} quota units, ${responseTime}ms)`);
+            return { success: true };
+          } catch (error) {
+            console.error('🔧 DEBUG: Error in TRACK_API_CALL:', error);
+            return { success: false, error: error.message };
+          }
+
+        case 'TRACK_CACHE_PERFORMANCE':
+          console.log('🔧 DEBUG: Executing TRACK_CACHE_PERFORMANCE case');
+          try {
+            const { cache_status, video_fetch_count } = message.data;
+            
+            await trackEvent('cache_performance', {
+              'cache_status': cache_status,
+              'video_fetch_count': video_fetch_count
+            });
+            
+            console.log(`📊 Tracked cache performance: ${cache_status} for ${video_fetch_count} video setting`);
+            return { success: true };
+          } catch (error) {
+            console.error('Failed to track cache performance:', error);
+            return { success: false, error: error.message };
+          }
+
         default:
+          console.log('🔧 DEBUG: Hit default case with message type:', message.type);
           console.warn('Unknown message type:', message.type);
           return { error: 'Unknown message type' };
       }
     } catch (error) {
+      console.error('🔧 DEBUG: Error in switch statement:', error);
       console.error('Error handling message:', error);
       return { success: false, error: error.message };
     }
   };
 
+  console.log('🔧 DEBUG: About to call handleMessage()');
+  
   // Handle async operations properly
   handleMessage()
-    .then(response => sendResponse(response))
-    .catch(error => sendResponse({ success: false, error: error.message }));
+    .then(response => {
+      console.log('🔧 DEBUG: handleMessage resolved with:', response);
+      sendResponse(response);
+    })
+    .catch(error => {
+      console.log('🔧 DEBUG: handleMessage rejected with:', error);
+      sendResponse({ success: false, error: error.message });
+    });
 
   // Return true to indicate we'll respond asynchronously
   return true;
