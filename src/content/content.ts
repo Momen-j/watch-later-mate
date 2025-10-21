@@ -517,18 +517,36 @@ async function getSelectedPlaylists(): Promise<string[]> {
  * @param success 
  * @param error 
  */
-async function trackAPICall(endpoint: string, responseTime: number, success: boolean, error?: string) {
+async function trackAPICall(endpoint: string, responseTime: number | null, success: boolean, error?: string) {
+  // Debug logging to catch the issue
+  console.log('📊 trackAPICall called with params:', { 
+    endpoint: endpoint, 
+    endpointType: typeof endpoint, 
+    responseTime, 
+    success 
+  });
+  
+  // Validate endpoint parameter
+  if (!endpoint || typeof endpoint !== 'string' || endpoint.trim() === '') {
+    console.error('❌ trackAPICall: Invalid endpoint detected!', {
+      endpoint: endpoint,
+      type: typeof endpoint,
+      stack: new Error().stack
+    });
+    return; // Don't send tracking data with invalid endpoint
+  }
+  
   try {
     await chrome.runtime.sendMessage({
       type: 'TRACK_API_CALL',
       data: {
-        endpoint: endpoint,
+        endpoint: endpoint.trim(),
         responseTime: responseTime,
         success: success,
         error: error
       }
     });
-    console.log('📊 API tracking sent:', endpoint);
+    console.log('📊 API tracking sent successfully:', endpoint);
   } catch (error) {
     console.warn('📊 Failed to track API call:', error);
   }
@@ -1053,15 +1071,26 @@ if (shortsSection) {
       playlistWrapper.setAttribute("data-custom-playlist", "true");
       
       // Add flexbox styling to make it take full width and act as row break
-      playlistWrapper.style.cssText = `
-      width: 100% !important;
-      flex-basis: 100% !important;
-      max-width: 100% !important;
-      margin: 0 !important;
-      margin-top: 2px !important;      // ← Space above playlist
-      padding-bottom: 24px !important;   // ← Space below playlist
-      box-sizing: border-box !important;
-    `;
+    //   playlistWrapper.style.cssText = `
+    //   width: 100% !important;
+    //   flex-basis: 100% !important;
+    //   max-width: 100% !important;
+    //   margin: 0 !important;
+    //   margin-top: 2px !important;      // ← Space above playlist
+    //   padding-bottom: 24px !important;   // ← Space below playlist
+    //   box-sizing: border-box !important;
+    // `;
+    playlistWrapper.style.cssText = `
+  width: 100% !important;
+  flex-basis: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  margin-top: 2px !important;
+  padding-bottom: 24px !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+  order: -1 !important;
+`;
 
       const playlistContainer = document.createElement("div");
       playlistContainer.id = `custom-playlist-container-${playlistData.id}`;
@@ -1212,6 +1241,82 @@ function debounce(func: Function, wait: number) {
 }
 
 /**
+ * Debug function to check Shadow DOM and find the actual video
+ */
+function debugAdVideo(): void {
+  console.log('🔍 Starting deep ad video search with Shadow DOM...');
+  
+  // Function to recursively search Shadow DOMs
+  function searchShadowDOM(element: Element | ShadowRoot, depth = 0) {
+    if (depth > 5) return; // Limit recursion depth
+    
+    // Check for videos in current element
+    const videos = element.querySelectorAll('video');
+    if (videos.length > 0) {
+      console.log(`🎥 Found ${videos.length} video(s) at depth ${depth}:`, videos);
+      videos.forEach(video => {
+        console.log('🎥 Video details:', {
+          src: video.src,
+          autoplay: video.autoplay,
+          playing: !video.paused,
+          parent: video.parentElement,
+          parentHTML: video.parentElement?.outerHTML.substring(0, 200)
+        });
+      });
+    }
+    
+    // Search all children's shadow roots
+    const children = element.querySelectorAll('*');
+    children.forEach(child => {
+      if (child.shadowRoot) {
+        console.log(`🔍 Found Shadow DOM in: ${child.tagName}`);
+        searchShadowDOM(child.shadowRoot, depth + 1);
+      }
+    });
+  }
+  
+  // Check the entire page
+  const contentGrid = document.querySelector('ytd-rich-grid-renderer');
+  if (contentGrid) {
+    console.log('🔍 Searching grid for Shadow DOMs...');
+    searchShadowDOM(contentGrid);
+    
+    // Also check if contentGrid itself has shadow root
+    if (contentGrid.shadowRoot) {
+      console.log('🔍 Content grid has shadow root!');
+      searchShadowDOM(contentGrid.shadowRoot);
+    }
+  }
+  
+  // Check masthead-ad specifically
+  const adContainer = document.querySelector('#masthead-ad');
+  if (adContainer) {
+    console.log('🔍 Checking masthead-ad for Shadow DOM...');
+    searchShadowDOM(adContainer);
+  }
+  
+  // Look for ytd-rich-item-renderer elements (video cards)
+  const richItems = document.querySelectorAll('ytd-rich-item-renderer');
+  console.log(`🔍 Found ${richItems.length} rich item renderers`);
+  richItems.forEach((item, index) => {
+    if (item.shadowRoot) {
+      console.log(`🔍 Rich item ${index} has shadow root`);
+      searchShadowDOM(item.shadowRoot);
+    }
+    
+    // Check for videos directly in the item
+    const itemVideos = item.querySelectorAll('video');
+    if (itemVideos.length > 0) {
+      console.log(`🎥 Rich item ${index} has video:`, itemVideos);
+    }
+  });
+}
+
+// Run at different times to catch dynamic loading
+setTimeout(debugAdVideo, 1500);
+setTimeout(debugAdVideo, 3000);
+
+/**
  * Enhanced injection with persistent observer and dynamic video count
  */
 async function injectPlaylistsWithObserver(): Promise<void> {
@@ -1281,17 +1386,33 @@ async function injectPlaylistsWithObserver(): Promise<void> {
 }
 
 // Scoped resize handler that only affects OUR playlists
+// window.addEventListener("resize", debounce(() => {
+//   // Only update OUR playlist videos, not YouTube's native content
+//   if (playlistsData.length > 0) {
+//     console.log("🔄 Resize detected, updating playlist layouts...");
+//     playlistsData.forEach((playlist) => {
+//       const newVideosPerPage = calculateVideosPerPage();
+//       if (playlist.paginationState.videosPerPage !== newVideosPerPage) {
+//         playlist.paginationState.videosPerPage = newVideosPerPage;
+//         updateVideoGrid(playlist.id);
+//       }
+//     });
+//   }
+// }, 250));
 window.addEventListener("resize", debounce(() => {
-  // Only update OUR playlist videos, not YouTube's native content
   if (playlistsData.length > 0) {
-    console.log("🔄 Resize detected, updating playlist layouts...");
+    console.log("🔄 Resize detected, updating playlist pagination only...");
     playlistsData.forEach((playlist) => {
       const newVideosPerPage = calculateVideosPerPage();
       if (playlist.paginationState.videosPerPage !== newVideosPerPage) {
         playlist.paginationState.videosPerPage = newVideosPerPage;
+        playlist.paginationState.currentPage = 0; // Reset to first page
         updateVideoGrid(playlist.id);
       }
     });
+    
+    // DON'T re-inject or move playlists - just update their internal pagination
+    console.log("✅ Playlist pagination updated, position maintained");
   }
 }, 250));
 
@@ -1391,6 +1512,7 @@ async function fetchPlaylistsFromAPI(playlistIds: string[]): Promise<CachedPlayl
         await trackAPICall('playlists', Date.now() - startTime, true);
       } catch (error) {
         await trackAPICall('playlists', Date.now() - startTime, false, (error as Error).message);
+        console.log('📊 About to track API error with endpoint:', 'playlists')
         throw error;
       }
     }
@@ -1436,8 +1558,15 @@ async function fetchPlaylistsFromAPI(playlistIds: string[]): Promise<CachedPlayl
           try {
             videos = await apiService.getLikedVideosPlaylist(videoFetchCount);
             await trackAPICall('playlistItems', Date.now() - startTime, true);
+
+            // Track videos calls (1 call per 50 videos)
+            const videoCallsCount = Math.ceil(videos.length / 50);
+            for (let i = 0; i < videoCallsCount; i++) {
+              await trackAPICall('videos', null, true);
+            }
           } catch (error) {
             await trackAPICall('playlistItems', Date.now() - startTime, false, (error as Error).message);
+            console.log('📊 About to track API error with endpoint:', 'playlists')
             throw error;
           }
         } else {
@@ -1446,8 +1575,15 @@ async function fetchPlaylistsFromAPI(playlistIds: string[]): Promise<CachedPlayl
           try {
             videos = await apiService.getCompletePlaylistData(playlist.id, videoFetchCount);
             await trackAPICall('playlistItems', Date.now() - startTime, true);
+            
+            // Track videos calls (1 call per 50 videos)
+            const videoCallsCount = Math.ceil(videos.length / 50);
+            for (let i = 0; i < videoCallsCount; i++) {
+              await trackAPICall('videos', null, true);
+            }
           } catch (error) {
             await trackAPICall('playlistItems', Date.now() - startTime, false, (error as Error).message);
+            console.log('📊 About to track API error with endpoint:', 'playlists')
             throw error;
           }
         }
